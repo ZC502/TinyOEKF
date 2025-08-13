@@ -1,7 +1,9 @@
 /*
  * Octonion Extended Kalman Filter for embedded processors
  *
- * Copyright (C) 2025 ZuoCen Liu
+ * Copyright (C) 2024 Simon D. Levy
+ * Modifications Copyright (C) 2025 ZuoCen Liu
+ * MIT License
  *
  */
 
