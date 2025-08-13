@@ -6,7 +6,6 @@
  * MIT License
  *
  */
-
 #include <math.h>
 #include <stdbool.h>
 #include <string.h>
@@ -18,10 +17,6 @@
 #ifndef _float_t
 #define _float_t float
 #endif
-
-// define OEKF dimension macros
-#define OEKF_N 14     // Total state dimensions: 8 (octonions) + 3 (velocity) + 3 (position)
-#define OEKF_M 6    // Observation dimensions (defined according to the actual number of sensors, e.g., 6 for IMU + GPS)
 
 // Linear alegbra ////////////////////////////////////////////////////////////
 
@@ -205,141 +200,143 @@ static void _sub(
 /// @private
 static bool invert(const _float_t * a, _float_t * ainv)
 {
-    _float_t tmp[OEKF_M];
+    _float_t tmp[EKF_M];
 
-    return _cholsl(a, ainv, tmp, OEKF_M) == 0;
+    return _cholsl(a, ainv, tmp, EKF_M) == 0;
 }
 
 
 // OEKF ///////////////////////////////////////////////////////////////////////
 
-// New: Octonion structure (1 real part + 7 imaginary parts, single precision)
+//Octonion structure (replacing the original quaternion/state vector)
 typedef struct {
- _float_t r;        // Real part (same precision as the original code)
-_float_t i[7];      // Imaginary parts (i0~i6, corresponding to 7 dimensions)
+    float r;          // real part
+    float i[7];       // 7 imaginary parts (i0-i6 correspond to e1-e7)
 } Octonion;
 
-// New: OEKF state structure (octonion + velocity + position, total dimensions = 8 + 3 + 3 = 14)
-typedef struct {
-Octonion q;        // Octonion (rotation + translation fusion, 8D)
-_float_t v[3];     // Velocity (x, y, z, 3D)
-_float_t p[3];     // Position (x, y, z, 3D)
-} OEKF_State;
+// Octonion operation function
+Octonion oct_multiply(const Octonion *a, const Octonion *b);
+void oct_normalize(Octonion *q);
 
-// Replace the original ekf_t with a structure dedicated to OKF
+// Octonion Kalman filter state structure
 typedef struct {
-OEKF_State state;        // State (quaternion + velocity + position)
-_float_t P[14 * 14];    // Covariance matrix (14×14, matching the state dimension)
-}oekf_t;
+    Octonion q;       // Octonion state (rotation + translation)
+    float P[14][14];  // 14-dimensional covariance matrix (8 quaternions + 3 velocities + 3 positions)
+    float Q[14][14];  // Process noise matrix
+    float R[6][6];    // Observation noise matrix (assuming 6-dimensional observation: 3 positions + 3 attitudes)
+    float K[14][6];   // Kalman gain
+    float dt;         // time step
+} TinyOEKF;
 
-static void okf_initialize(okf_t *okf, const _float_t pdiag[OKF_N]) {  
- //  Initialize the octonion to the identity element (no rotation)
-    okf->state.q.r = 1.0f;
-    memset(okf->state.q.i, 0, 7*sizeof(_float_t));
-    // Initialize the velocity and position to 0
-    memset(okf->state.v, 0, 3*sizeof(_float_t));
-    memset(okf->state.p, 0, 3*sizeof(_float_t));
-    // Initialize the covariance matrix (diagonal matrix)
-    for (int i=0; i<OKF_N; ++i) {
-        for (int j=0; j<OKF_N; ++j) {
-            okf->P[i*OKF_N + j] = (i==j) ? pdiag[i] : 0;
+// Core function of the filter
+void tinyoekf_init(TinyOEKF *ekf, float dt);
+void tinyoekf_predict(TinyOEKF *ekf, const float *u);
+void tinyoekf_update(TinyOEKF *ekf, const float *z);
+
+/**
+ * Initializes the EKF
+ * @param ekf pointer to an ekf_t structure
+ * @param pdiag a vector of length EKF_N containing the initial values for the
+ * covariance matrix diagonal
+ */
+static void ekf_initialize(ekf_t * ekf, const _float_t pdiag[EKF_N])
+{
+    for (int i=0; i<EKF_N; ++i) {
+
+        for (int j=0; j<EKF_N; ++j) {
+
+            ekf->P[i*EKF_N+j] = i==j ? pdiag[i] : 0;
         }
+
+        ekf->x[i] = 0;
     }
 }
 
 /**
- * Initializes the EKF
- * @param ekf pointer to an oekf_t structure
- * @param pdiag a vector of length OEKF_N containing the initial values for the
- * covariance matrix diagonal
- */
-
-
-/**
   * Runs the EKF prediction step
-  * @param ekf pointer to an oekf_t structure
+  * @param ekf pointer to an ekf_t structure
   * @param fx predicted values
   * @param F Jacobian of state-transition function
   * @param Q process noise matrix
   * 
-  */static void oekf_predict(
-       oekf_t * ekf, 
-        const _float_t fx[OEKF_N],
-        const _float_t F[OEKF_N*OEKF_N],
-        const _float_t Q[OEKF_N*OEKF_N])
+  */static void ekf_predict(
+        ekf_t * ekf, 
+        const _float_t fx[EKF_N],
+        const _float_t F[EKF_N*EKF_N],
+        const _float_t Q[EKF_N*EKF_N])
 {        
     // \hat{x}_k = f(\hat{x}_{k-1}, u_k)
-    memcpy(ekf->x, fx, OEKF_N*sizeof(_float_t));
+    memcpy(ekf->x, fx, EKF_N*sizeof(_float_t));
 
     // P_k = F_{k-1} P_{k-1} F^T_{k-1} + Q_{k-1}
 
-    _float_t FP[OEKF_N*OEKF_N] = {};
-    _mulmat(F, ekf->P,  FP, OEKF_N, OEKF_N, OEKF_N);
+    _float_t FP[EKF_N*EKF_N] = {};
+    _mulmat(F, ekf->P,  FP, EKF_N, EKF_N, EKF_N);
 
-    _float_t Ft[OEKF_N*OEKF_N] = {};
-    _transpose(F, Ft, OEKF_N, OEKF_N);
+    _float_t Ft[EKF_N*EKF_N] = {};
+    _transpose(F, Ft, EKF_N, EKF_N);
 
-    _float_t FPFt[OEKF_N*OEKF_N] = {};
-    _mulmat(FP, Ft, FPFt, OEKF_N, OEKF_N, OEKF_N);
+    _float_t FPFt[EKF_N*EKF_N] = {};
+    _mulmat(FP, Ft, FPFt, EKF_N, EKF_N, EKF_N);
 
-    _addmat(FPFt, Q, ekf->P, OEKF_N, OEKF_N);
+    _addmat(FPFt, Q, ekf->P, EKF_N, EKF_N);
 }
 
 /// @private
-static void oekf_update_step3(oekf_t * ekf, _float_t GH[OEKF_N*OEKF_N])
+static void ekf_update_step3(ekf_t * ekf, _float_t GH[EKF_N*EKF_N])
 {
-    _negate(GH, OEKF_N, OEKF_N);
-    _addeye(GH, OEKF_N);
-    _float_t GHP[OEKF_N*OEKF_N];
-    _mulmat(GH, ekf->P, GHP, OEKF_N, OEKF_N, OEKF_N);
-    memcpy(ekf->P, GHP, OEKF_N*OEKF_N*sizeof(_float_t));
+    _negate(GH, EKF_N, EKF_N);
+    _addeye(GH, EKF_N);
+    _float_t GHP[EKF_N*EKF_N];
+    _mulmat(GH, ekf->P, GHP, EKF_N, EKF_N, EKF_N);
+    memcpy(ekf->P, GHP, EKF_N*EKF_N*sizeof(_float_t));
 }
 
 /**
   * Runs the EKF update step
-  * @param ekf pointer to an oekf_t structure
+  * @param ekf pointer to an ekf_t structure
   * @param z observations
   * @param hx predicted values
   * @param H sensor-function Jacobian matrix
   * @param R measurement-noise matrix
   * 
   */
-static bool oekf_update(
-       oekf_t * ekf, 
-        const _float_t z[OEKF_M], 
-        const _float_t hx[OEKF_N],
-        const _float_t H[OEKF_M*OEKF_N],
-        const _float_t R[OEKF_M*OEKF_M])
+static bool ekf_update(
+        ekf_t * ekf, 
+        const _float_t z[EKF_M], 
+        const _float_t hx[EKF_N],
+        const _float_t H[EKF_M*EKF_N],
+        const _float_t R[EKF_M*EKF_M])
 {        
     // G_k = P_k H^T_k (H_k P_k H^T_k + R)^{-1}
-    _float_t G[OEKF_N*OEKF_M];
-    _float_t Ht[OEKF_N*OEKF_M];
-    _transpose(H, Ht, OEKF_M, OEKF_N);
-    _float_t PHt[OEKF_N*OEKF_M];
-    _mulmat(ekf->P, Ht, PHt, OEKF_N, OEKF_N, OEKF_M);
-    _float_t HP[OEKF_M*OEKF_N];
-    _mulmat(H, ekf->P, HP, OEKF_M, OEKF_N, OEKF_N);
-    _float_t HpHt[OEKF_M*OEKF_M];
-    _mulmat(HP, Ht, HpHt, OEKF_M, OEKF_N, OEKF_M);
-    _float_t HpHtR[OEKF_M*OEKF_M];
-    _addmat(HpHt, R, HpHtR, OEKF_M, OEKF_M);
-    _float_t HPHtRinv[OEKF_M*OEKF_M];
+    _float_t G[EKF_N*EKF_M];
+    _float_t Ht[EKF_N*EKF_M];
+    _transpose(H, Ht, EKF_M, EKF_N);
+    _float_t PHt[EKF_N*EKF_M];
+    _mulmat(ekf->P, Ht, PHt, EKF_N, EKF_N, EKF_M);
+    _float_t HP[EKF_M*EKF_N];
+    _mulmat(H, ekf->P, HP, EKF_M, EKF_N, EKF_N);
+    _float_t HpHt[EKF_M*EKF_M];
+    _mulmat(HP, Ht, HpHt, EKF_M, EKF_N, EKF_M);
+    _float_t HpHtR[EKF_M*EKF_M];
+    _addmat(HpHt, R, HpHtR, EKF_M, EKF_M);
+    _float_t HPHtRinv[EKF_M*EKF_M];
     if (!invert(HpHtR, HPHtRinv)) {
         return false;
     }
-    _mulmat(PHt, HPHtRinv, G, OEKF_N, OEKF_M, OEKF_M);
+    _mulmat(PHt, HPHtRinv, G, EKF_N, EKF_M, EKF_M);
 
     // \hat{x}_k = \hat{x_k} + G_k(z_k - h(\hat{x}_k))
-    _float_t z_hx[OEKF_M];
-    _sub(z, hx, z_hx, OEKF_M);
-    _float_t Gz_hx[OEKF_M*OEKF_N];
-    _mulvec(G, z_hx, Gz_hx, OEKF_N, OEKF_M);
-    _addvec(ekf->x, Gz_hx, ekf->x, OEKF_N);
+    _float_t z_hx[EKF_M];
+    _sub(z, hx, z_hx, EKF_M);
+    _float_t Gz_hx[EKF_M*EKF_N];
+    _mulvec(G, z_hx, Gz_hx, EKF_N, EKF_M);
+    _addvec(ekf->x, Gz_hx, ekf->x, EKF_N);
 
     // P_k = (I - G_k H_k) P_k
-    _float_t GH[OEKF_N*OEKF_N];
-    _mulmat(G, H, GH, OEKF_N, OEKF_M, OEKF_N);
-    oekf_update_step3(ekf, GH);
+    _float_t GH[EKF_N*EKF_N];
+    _mulmat(G, H, GH, EKF_N, EKF_M, EKF_N);
+    ekf_update_step3(ekf, GH);
 
     // success
     return true;
