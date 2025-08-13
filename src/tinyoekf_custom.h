@@ -2,7 +2,7 @@
  * Custom EKF methods
  *
  * Copyright (C) 2024 Simon D. Levy
- *
+ * Modifications Copyright (C) 2025 ZuoCen Liu
  * MIT License
  */
 
@@ -29,6 +29,77 @@ static _float_t dot(const _float_t x[EKF_N], const _float_t y[EKF_N])
     }
 
     return d;
+}
+
+// New addition: Definition of octonion structure
+typedef struct {
+    _float_t r;          // real part
+    _float_t i[7];       // Seven imaginary parts (i[0] to i[6])
+} Octonion;
+
+// New: Octonion multiplication function
+static inline void octonion_mult(const Octonion *a, const Octonion *b, Octonion *c) {
+    // Real part calculation
+    c->r = a->r * b->r 
+         - a->i[0]*b->i[0] - a->i[1]*b->i[1] - a->i[2]*b->i[2] 
+         - a->i[3]*b->i[3] - a->i[4]*b->i[4] - a->i[5]*b->i[5] 
+         - a->i[6]*b->i[6];
+
+    // Imaginary part e0 (i[0])
+    c->i[0] = a->r*b->i[0] + a->i[0]*b->r 
+            + (a->i[1]*b->i[3] - a->i[3]*b->i[1]) 
+            + (a->i[2]*b->i[6] - a->i[6]*b->i[2]) 
+            + (a->i[4]*b->i[2] - a->i[2]*b->i[4]) 
+            + (a->i[5]*b->i[1] - a->i[1]*b->i[5]) 
+            + (a->i[6]*b->i[5] - a->i[5]*b->i[6]);
+
+     // Imaginary part e1 (i[1])
+    c->i[1] = a->r*b->i[1] + a->i[1]*b->r 
+            + (a->i[0]*b->i[3] - a->i[3]*b->i[0]) 
+            + (a->i[2]*b->i[4] - a->i[4]*b->i[2]) 
+            + (a->i[5]*b->i[2] - a->i[2]*b->i[5]) 
+            + (a->i[6]*b->i[5] - a->i[5]*b->i[6]) 
+            + (a->i[0]*b->i[5] - a->i[5]*b->i[0]);
+
+    // Imaginary part e2 (i[2])
+    c->i[2] = a->r*b->i[2] + a->i[2]*b->r 
+            + (a->i[0]*b->i[6] - a->i[6]*b->i[0]) 
+            + (a->i[1]*b->i[4] - a->i[4]*b->i[1]) 
+            + (a->i[3]*b->i[5] - a->i[5]*b->i[3]) 
+            + (a->i[4]*b->i[0] - a->i[0]*b->i[4]) 
+            + (a->i[5]*b->i[1] - a->i[1]*b->i[5]);
+
+    // Imaginary part e3 (i[3])
+    c->i[3] = a->r*b->i[3] + a->i[3]*b->r 
+            + (a->i[1]*b->i[0] - a->i[0]*b->i[1]) 
+            + (a->i[2]*b->i[5] - a->i[5]*b->i[2]) 
+            + (a->i[4]*b->i[1] - a->i[1]*b->i[4]) 
+            + (a->i[6]*b->i[4] - a->i[4]*b->i[6]) 
+            + (a->i[0]*b->i[6] - a->i[6]*b->i[0]);
+
+    // Imaginary part e4 (i[4])
+    c->i[4] = a->r*b->i[4] + a->i[4]*b->r 
+            + (a->i[1]*b->i[2] - a->i[2]*b->i[1]) 
+            + (a->i[3]*b->i[1] - a->i[1]*b->i[3]) 
+            + (a->i[4]*b->i[5] - a->i[5]*b->i[4]) 
+            + (a->i[6]*b->i[3] - a->i[3]*b->i[6]) 
+            + (a->i[0]*b->i[2] - a->i[2]*b->i[0]);
+
+    // Imaginary part e5 (i[5])
+    c->i[5] = a->r*b->i[5] + a->i[5]*b->r 
+            + (a->i[1]*b->i[2] - a->i[2]*b->i[1]) 
+            + (a->i[2]*b->i[3] - a->i[3]*b->i[2]) 
+            + (a->i[4]*b->i[6] - a->i[6]*b->i[4]) 
+            + (a->i[6]*b->i[0] - a->i[0]*b->i[6]) 
+            + (a->i[0]*b->i[1] - a->i[1]*b->i[0]);
+
+    // Imaginary part e6 (i[6])
+    c->i[6] = a->r*b->i[6] + a->i[6]*b->r 
+            + (a->i[0]*b->i[2] - a->i[2]*b->i[0]) 
+            + (a->i[1]*b->i[5] - a->i[5]*b->i[1]) 
+            + (a->i[4]*b->i[5] - a->i[5]*b->i[4]) 
+            + (a->i[3]*b->i[6] - a->i[6]*b->i[3]) 
+            + (a->i[0]*b->i[3] - a->i[3]*b->i[0]);
 }
 
 /**
