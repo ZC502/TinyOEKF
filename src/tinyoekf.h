@@ -12,6 +12,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <string.h>
+#include "tinyoekf_custom.h"  // Include the header file of custom functions
 
 #ifndef _float_t
 #define _float_t float
@@ -88,6 +89,9 @@ static void oekf_predict(oekf_t *ekf, const _float_t fx[OEKF_N], const _float_t 
     memcpy(ekf->state.q.i, &ekf->x[1], 7 * sizeof(_float_t));
     memcpy(ekf->state.v, &ekf->x[8], 3 * sizeof(_float_t));
     memcpy(ekf->state.p, &ekf->x[11], 3 * sizeof(_float_t));
+
+    // Normalize the quaternion to ensure the validity of the state
+    octonion_normalize(&ekf->state.q);
     
     // Calculate the covariance matrix P = F * P * F^T + Q
     _float_t FP[OEKF_N * OEKF_N] = {};
@@ -151,6 +155,9 @@ static bool oekf_update(oekf_t *ekf, const _float_t z[OEKF_M], const _float_t hx
     memcpy(ekf->state.q.i, &ekf->x[1], 7 * sizeof(_float_t));
     memcpy(ekf->state.v, &ekf->x[8], 3 * sizeof(_float_t));
     memcpy(ekf->state.p, &ekf->x[11], 3 * sizeof(_float_t));
+
+    // Normalize the octonion to ensure the validity of the state
+    octonion_normalize(&ekf->state.q);
     
     // Update the covariance matrix P = (I - G*H) * P
     _float_t GH[OEKF_N * OEKF_N];
