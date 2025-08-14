@@ -104,11 +104,11 @@ static inline void octonion_mult(const Octonion *a, const Octonion *b, Octonion 
 
 /**
   * Runs a custom update on the covariance matrix
-  * @param ekf pointer to an ekf_t structure
+  * @param ekf pointer to an oekf_t structure
   * @param A from the update P <- A P A^T
   */
 static void ekf_custom_multiply_covariance(
-        ekf_t * ekf, const _float_t A[OEKF_N*OEKF_N]) 
+        oekf_t * ekf, const _float_t A[OEKF_N*OEKF_N]) 
 {
     _float_t AP[OEKF_N*OEKF_N] = {};
     _mulmat(A, ekf->P,  AP, OEKF_N, OEKF_N, OEKF_N);
@@ -121,13 +121,13 @@ static void ekf_custom_multiply_covariance(
 
 /**
   * Enforces symmetry of the covariance matrix and ensures that the its values stay bounded
-  * @param ekf pointer to an ekf_t structure
+  * @param ekf pointer to an oekf_t structure
   * @param minval minimum covariance bound
   * @param maxval maximum covariance bound
   * 
   */
 static void ekf_custom_cleanup_covariance(
-        ekf_t * ekf, const float minval, const float maxval)
+        oekf_t * ekf, const float minval, const float maxval)
 {
 
     for (int i=0; i<OEKF_N; i++) {
@@ -146,7 +146,7 @@ static void ekf_custom_cleanup_covariance(
 
 /**
   * Updates the EKF with a single scalar observation
-  * @param ekf pointer to an ekf_t structure
+  * @param ekf pointer to an oekf_t structure
   * @param z the observation
   * @param hx the predicted value
   * @param h one column of the sensor-function Jacobian matrix H
@@ -154,13 +154,11 @@ static void ekf_custom_cleanup_covariance(
   * 
   */
 static void ekf_custom_scalar_update(
-        ekf_t * ekf,
+        oekf_t * ekf,
         const _float_t z,
         const _float_t hx,
         const _float_t h[OEKF_N], 
         const _float_t r)
-{
-    (void)ekf_update;
 
     // G_k = P_k H^T_k (H_k P_k H^T_k + R)^{-1}
     _float_t ph[OEKF_N] = {};
