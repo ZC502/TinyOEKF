@@ -462,7 +462,7 @@ static bool ekf_update(
         const _float_t z[OEKF_M], 
         const _float_t hx[OEKF_M],
         const _float_t H[OEKF_M*OEKF_N],
-        const _float_t R[OEKF_M*EKF_M])
+        const _float_t R[OEKF_M*OEKF_M])
 {        
     // G_k = P_k H^T_k (H_k P_k H^T_k + R)^{-1}
     _float_t G[OEKF_N*OEKF_M];
