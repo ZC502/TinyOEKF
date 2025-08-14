@@ -8,23 +8,23 @@
 
 /// @private
 static void outer(
-        const _float_t x[EKF_N],
-        const _float_t y[EKF_N],
-        _float_t a[EKF_N*EKF_N]) 
+        const _float_t x[OEKF_N],
+        const _float_t y[OEKF_N],
+        _float_t a[OEKF_N*OEKF_N]) 
 {
-    for (int i=0; i<EKF_N; i++) {
-        for (int j=0; j<EKF_N; j++) {
-            a[i*EKF_N+j] = x[i] * y[j];
+    for (int i=0; i<OEKF_N; i++) {
+        for (int j=0; j<OEKF_N; j++) {
+            a[i*OEKF_N+j] = x[i] * y[j];
         }
     }
 }
 
 /// @private
-static _float_t dot(const _float_t x[EKF_N], const _float_t y[EKF_N]) 
+static _float_t dot(const _float_t x[OEKF_N], const _float_t y[OEKF_N]) 
 {
     _float_t d = 0;
 
-    for (int k=0; k<EKF_N; k++) {
+    for (int k=0; k<OEKF_N; k++) {
         d += x[k] * y[k];
     }
 
@@ -108,15 +108,15 @@ static inline void octonion_mult(const Octonion *a, const Octonion *b, Octonion 
   * @param A from the update P <- A P A^T
   */
 static void ekf_custom_multiply_covariance(
-        ekf_t * ekf, const _float_t A[EKF_N*EKF_N]) 
+        ekf_t * ekf, const _float_t A[OEKF_N*OEKF_N]) 
 {
-    _float_t AP[EKF_N*EKF_N] = {};
-    _mulmat(A, ekf->P,  AP, EKF_N, EKF_N, EKF_N);
+    _float_t AP[OEKF_N*OEKF_N] = {};
+    _mulmat(A, ekf->P,  AP, OEKF_N, OEKF_N, OEKF_N);
 
-    _float_t At[EKF_N*EKF_N] = {};
-    _transpose(A, At, EKF_N, EKF_N);
+    _float_t At[OEKF_N*OEKF_N] = {};
+    _transpose(A, At, OEKF_N, OEKF_N);
 
-    _mulmat(AP, At, ekf->P, EKF_N, EKF_N, EKF_N);
+    _mulmat(AP, At, ekf->P, OEKF_N, OEKF_N, OEKF_N);
 }
 
 /**
@@ -130,13 +130,13 @@ static void ekf_custom_cleanup_covariance(
         ekf_t * ekf, const float minval, const float maxval)
 {
 
-    for (int i=0; i<EKF_N; i++) {
+    for (int i=0; i<OEKF_N; i++) {
 
-        for (int j=i; j<EKF_N; j++) {
+        for (int j=i; j<OEKF_N; j++) {
 
-            const _float_t pval = (ekf->P[i*EKF_N+j] + ekf->P[EKF_N*j+i]) / 2;
+            const _float_t pval = (ekf->P[i*OEKF_N+j] + ekf->P[OEKF_N*j+i]) / 2;
 
-            ekf->P[i*EKF_N+j] = ekf->P[j*EKF_N+i] =
+            ekf->P[i*OEKF_N+j] = ekf->P[j*OEKF_N+i] =
                 pval > maxval ?  maxval :
                 (i==j && pval < minval) ?  minval :
                 pval;
@@ -157,34 +157,34 @@ static void ekf_custom_scalar_update(
         ekf_t * ekf,
         const _float_t z,
         const _float_t hx,
-        const _float_t h[EKF_N], 
+        const _float_t h[OEKF_N], 
         const _float_t r)
 {
     (void)ekf_update;
 
     // G_k = P_k H^T_k (H_k P_k H^T_k + R)^{-1}
-    _float_t ph[EKF_N] = {};
-    _mulvec(ekf->P, h, ph, EKF_N, EKF_N);
+    _float_t ph[OEKF_N] = {};
+    _mulvec(ekf->P, h, ph, OEKF_N, OEKF_N);
     const _float_t hphtr_inv = 1 / (r + dot(h, ph)); 
-    _float_t g[EKF_N] = {};
-    for (int i=0; i<EKF_N; ++i) {
+    _float_t g[OEKF_N] = {};
+    for (int i=0; i<OEKF_N; ++i) {
         g[i] = ph[i] * hphtr_inv;
     }
 
     // \hat{x}_k = \hat{x_k} + G_k(z_k - h(\hat{x}_k))
-    for (int i=0; i<EKF_N; ++i) {
+    for (int i=0; i<OEKF_N; ++i) {
         ekf->x[i] += g[i] * (z - hx);
     }
 
     // P_k = (I - G_k H_k) P_k$
-    _float_t GH[EKF_N*EKF_N];
+    _float_t GH[OEKF_N*OEKF_N];
     outer(g, h, GH); 
     ekf_update_step3(ekf, GH);
 
     // Does this belong here, or in caller?
-    for (int i=0; i<EKF_N; i++) {
-        for (int j=i; j<EKF_N; j++) {
-            ekf->P[i*EKF_N+j] += r * g[i] * g[j];
+    for (int i=0; i<OEKF_N; i++) {
+        for (int j=i; j<OEKF_N; j++) {
+            ekf->P[i*OEKF_N+j] += r * g[i] * g[j];
         }
     }
 }
