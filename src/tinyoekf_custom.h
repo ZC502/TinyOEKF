@@ -102,6 +102,17 @@ static inline void octonion_mult(const Octonion *a, const Octonion *b, Octonion 
             + (a->i[0]*b->i[3] - a->i[3]*b->i[0]);
 }
 
+// Octonion normalization function
+static void octonion_normalize(Octonion *q) {
+    _float_t norm = sqrt(q->r*q->r + dot(q->i, q->i));  // Reuse the existing dot function
+    if (norm > 0) {
+        q->r /= norm;
+        for (int i=0; i<7; i++) {
+            q->i[i] /= norm;
+        }
+    }
+}
+
 /**
   * Runs a custom update on the covariance matrix
   * @param ekf pointer to an oekf_t structure
