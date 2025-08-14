@@ -386,7 +386,7 @@ void tinyoekf_update(TinyOEKF *ekf, const float *z);
 /**
  * Initializes the EKF
  * @param ekf pointer to an ekf_t structure
- * @param pdiag a vector of length EKF_N containing the initial values for the
+ * @param pdiag a vector of length OEKF_N containing the initial values for the
  * covariance matrix diagonal
  */
 
@@ -401,7 +401,7 @@ static void oekf_initialize(oekf_t * oekf, const _float_t pdiag[OEKF_N]){
  // Initialize the covariance matrix (diagonal matrix)
  for (int i=0; i<OEKF_N; ++i) {
 
-        for (int j=0; j<EKF_N; ++j) {
+        for (int j=0; j<OEKF_N; ++j) {
 
             oekf->P[i*OEKF_N+j] = i==j ? pdiag[i] : 0;
         }
@@ -417,35 +417,35 @@ static void oekf_initialize(oekf_t * oekf, const _float_t pdiag[OEKF_N]){
   * 
   */static void ekf_predict(
         ekf_t * ekf, 
-        const _float_t fx[EKF_N],
-        const _float_t F[EKF_N*EKF_N],
-        const _float_t Q[EKF_N*EKF_N])
+        const _float_t fx[OEKF_N],
+        const _float_t F[OEKF_N*OEKF_N],
+        const _float_t Q[OEKF_N*OEKF_N])
 {        
     // \hat{x}_k = f(\hat{x}_{k-1}, u_k)
-    memcpy(ekf->x, fx, EKF_N*sizeof(_float_t));
+    memcpy(ekf->x, fx, OEKF_N*sizeof(_float_t));
 
     // P_k = F_{k-1} P_{k-1} F^T_{k-1} + Q_{k-1}
 
-    _float_t FP[EKF_N*EKF_N] = {};
-    _mulmat(F, ekf->P,  FP, EKF_N, EKF_N, EKF_N);
+    _float_t FP[OEKF_N*OEKF_N] = {};
+    _mulmat(F, ekf->P,  FP, OEKF_N, OEKF_N, OEKF_N);
 
-    _float_t Ft[EKF_N*EKF_N] = {};
-    _transpose(F, Ft, EKF_N, EKF_N);
+    _float_t Ft[OEKF_N*OEKF_N] = {};
+    _transpose(F, Ft, OEKF_N, OEKF_N);
 
-    _float_t FPFt[EKF_N*EKF_N] = {};
-    _mulmat(FP, Ft, FPFt, EKF_N, EKF_N, EKF_N);
+    _float_t FPFt[OEKF_N*OEKF_N] = {};
+    _mulmat(FP, Ft, FPFt, OEKF_N, OEKF_N, OEKF_N);
 
-    _addmat(FPFt, Q, ekf->P, EKF_N, EKF_N);
+    _addmat(FPFt, Q, ekf->P, OEKF_N, OEKF_N);
 }
 
 /// @private
-static void ekf_update_step3(ekf_t * ekf, _float_t GH[EKF_N*EKF_N])
+static void ekf_update_step3(ekf_t * ekf, _float_t GH[OEKF_N*OEKF_N])
 {
-    _negate(GH, EKF_N, EKF_N);
-    _addeye(GH, EKF_N);
-    _float_t GHP[EKF_N*EKF_N];
-    _mulmat(GH, ekf->P, GHP, EKF_N, EKF_N, EKF_N);
-    memcpy(ekf->P, GHP, EKF_N*EKF_N*sizeof(_float_t));
+    _negate(GH, OEKF_N, OEKF_N);
+    _addeye(GH, OEKF_N);
+    _float_t GHP[OEKF_N*OEKF_N];
+    _mulmat(GH, ekf->P, GHP, OEKF_N, OEKF_N, OEKF_N);
+    memcpy(ekf->P, GHP, OEKF_N*OEKF_N*sizeof(_float_t));
 }
 
 /**
@@ -460,38 +460,38 @@ static void ekf_update_step3(ekf_t * ekf, _float_t GH[EKF_N*EKF_N])
 static bool ekf_update(
         ekf_t * ekf, 
         const _float_t z[EKF_M], 
-        const _float_t hx[EKF_N],
-        const _float_t H[EKF_M*EKF_N],
+        const _float_t hx[OEKF_M],
+        const _float_t H[EKF_M*OEKF_N],
         const _float_t R[EKF_M*EKF_M])
 {        
     // G_k = P_k H^T_k (H_k P_k H^T_k + R)^{-1}
-    _float_t G[EKF_N*EKF_M];
-    _float_t Ht[EKF_N*EKF_M];
-    _transpose(H, Ht, EKF_M, EKF_N);
-    _float_t PHt[EKF_N*EKF_M];
-    _mulmat(ekf->P, Ht, PHt, EKF_N, EKF_N, EKF_M);
-    _float_t HP[EKF_M*EKF_N];
-    _mulmat(H, ekf->P, HP, EKF_M, EKF_N, EKF_N);
+    _float_t G[OEKF_N*EKF_M];
+    _float_t Ht[OEKF_N*EKF_M];
+    _transpose(H, Ht, EKF_M, OEKF_N);
+    _float_t PHt[OEKF_N*EKF_M];
+    _mulmat(ekf->P, Ht, PHt, OEKF_N, OEKF_N, EKF_M);
+    _float_t HP[EKF_M*OEKF_N];
+    _mulmat(H, ekf->P, HP, EKF_M, OEKF_N, OEKF_N);
     _float_t HpHt[EKF_M*EKF_M];
-    _mulmat(HP, Ht, HpHt, EKF_M, EKF_N, EKF_M);
+    _mulmat(HP, Ht, HpHt, EKF_M, OEKF_N, EKF_M);
     _float_t HpHtR[EKF_M*EKF_M];
     _addmat(HpHt, R, HpHtR, EKF_M, EKF_M);
     _float_t HPHtRinv[EKF_M*EKF_M];
     if (!invert(HpHtR, HPHtRinv)) {
         return false;
     }
-    _mulmat(PHt, HPHtRinv, G, EKF_N, EKF_M, EKF_M);
+    _mulmat(PHt, HPHtRinv, G, OEKF_N, EKF_M, EKF_M);
 
     // \hat{x}_k = \hat{x_k} + G_k(z_k - h(\hat{x}_k))
     _float_t z_hx[EKF_M];
     _sub(z, hx, z_hx, EKF_M);
-    _float_t Gz_hx[EKF_M*EKF_N];
-    _mulvec(G, z_hx, Gz_hx, EKF_N, EKF_M);
-    _addvec(ekf->x, Gz_hx, ekf->x, EKF_N);
+    _float_t Gz_hx[EKF_M*OEKF_N];
+    _mulvec(G, z_hx, Gz_hx, OEKF_N, EKF_M);
+    _addvec(ekf->x, Gz_hx, ekf->x, OEKF_N);
 
     // P_k = (I - G_k H_k) P_k
-    _float_t GH[EKF_N*EKF_N];
-    _mulmat(G, H, GH, EKF_N, EKF_M, EKF_N);
+    _float_t GH[OEKF_N*OEKF_N];
+    _mulmat(G, H, GH, OEKF_N, EKF_M, OEKF_N);
     ekf_update_step3(ekf, GH);
 
     // success
