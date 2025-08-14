@@ -173,6 +173,7 @@ static void _mulmat(
         const int acols, 
         const int bcols)
 {
+    if (arows <= 0 || acols <= 0 || bcols <= 0) return;    // New check
     for (int i=0; i<arows; ++i) {
         for (int j=0; j<bcols; ++j) {
             c[i*bcols+j] = 0;
@@ -351,12 +352,6 @@ static bool invert(const _float_t * a, _float_t * ainv)
 
 
 // OEKF ///////////////////////////////////////////////////////////////////////
-
-//Octonion structure (replacing the original quaternion/state vector)
-typedef struct {
-    float r;          // real part
-    float i[7];       // 7 imaginary parts (i0-i6 correspond to e1-e7)
-} Octonion;
 
 // Octonion operation function
 Octonion oct_multiply(const Octonion *a, const Octonion *b);
