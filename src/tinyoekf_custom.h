@@ -119,7 +119,7 @@ static void octonion_normalize(Octonion *q) {
   * @param A from the update P <- A P A^T
   */
 static void ekf_custom_multiply_covariance(
-        oekf_t * ekf, const _float_t A[OEKF_N*OEKF_N]) 
+        ekf_t * ekf, const _float_t A[OEKF_N*OEKF_N]) 
 {
     _float_t AP[OEKF_N*OEKF_N] = {};
     _mulmat(A, ekf->P,  AP, OEKF_N, OEKF_N, OEKF_N);
