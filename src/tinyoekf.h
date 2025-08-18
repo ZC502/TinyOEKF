@@ -387,7 +387,7 @@ void tinyoekf_update(TinyOEKF *ekf, const float *z);
 
 /**
  * Initializes the EKF
- * @param ekf pointer to an ekf_t structure
+ * @param ekf pointer to an oekf_t structure
  * @param pdiag a vector of length OEKF_N containing the initial values for the
  * covariance matrix diagonal
  */
@@ -412,13 +412,13 @@ static void oekf_initialize(oekf_t * oekf, const _float_t pdiag[OEKF_N]){
 
 /**
   * Runs the EKF prediction step
-  * @param ekf pointer to an ekf_t structure
+  * @param ekf pointer to an oekf_t structure
   * @param fx predicted values
   * @param F Jacobian of state-transition function
   * @param Q process noise matrix
   * 
   */static void ekf_predict(
-        ekf_t * ekf, 
+        oekf_t * ekf, 
         const _float_t fx[OEKF_N],
         const _float_t F[OEKF_N*OEKF_N],
         const _float_t Q[OEKF_N*OEKF_N])
@@ -441,7 +441,7 @@ static void oekf_initialize(oekf_t * oekf, const _float_t pdiag[OEKF_N]){
 }
 
 /// @private
-static void ekf_update_step3(ekf_t * ekf, _float_t GH[OEKF_N*OEKF_N])
+static void ekf_update_step3(oekf_t * ekf, _float_t GH[OEKF_N*OEKF_N])
 {
     _negate(GH, OEKF_N, OEKF_N);
     _addeye(GH, OEKF_N);
@@ -452,7 +452,7 @@ static void ekf_update_step3(ekf_t * ekf, _float_t GH[OEKF_N*OEKF_N])
 
 /**
   * Runs the EKF update step
-  * @param ekf pointer to an ekf_t structure
+  * @param ekf pointer to an oekf_t structure
   * @param z observations
   * @param hx predicted values
   * @param H sensor-function Jacobian matrix
@@ -460,7 +460,7 @@ static void ekf_update_step3(ekf_t * ekf, _float_t GH[OEKF_N*OEKF_N])
   * 
   */
 static bool ekf_update(
-        ekf_t * ekf, 
+        oekf_t * ekf, 
         const _float_t z[OEKF_M], 
         const _float_t hx[OEKF_M],
         const _float_t H[OEKF_M*OEKF_N],
