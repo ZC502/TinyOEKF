@@ -90,7 +90,7 @@ static void oekf_predict(oekf_t *ekf, const _float_t fx[OEKF_N], const _float_t 
     memcpy(ekf->state.v, &ekf->x[8], 3 * sizeof(_float_t));
     memcpy(ekf->state.p, &ekf->x[11], 3 * sizeof(_float_t));
 
-    // Normalize the quaternion to ensure the validity of the state
+    // Normalize the octonion to ensure the validity of the state
     octonion_normalize(&ekf->state.q);
     
     // Calculate the covariance matrix P = F * P * F^T + Q
