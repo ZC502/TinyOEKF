@@ -169,8 +169,6 @@ static bool oekf_update(oekf_t *ekf, const _float_t z[OEKF_M], const _float_t hx
 
 #endif // TINYOEKF_H
 
-// Linear alegbra ////////////////////////////////////////////////////////////
-
 /// @private
 static void _mulmat(
         const _float_t * a, 
