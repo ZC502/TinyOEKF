@@ -12,7 +12,7 @@ all: gps
 run: gps
 	./gps
 
-gps: gps.c $(SRC)/tinyekf.h
+gps: gps.c $(SRC)/tinyoekf.h $(SRC)/tinyoekf_custom.h
 	gcc -Wall -I. -I$(SRC) -o gps gps.c -lm
 
 edit:
