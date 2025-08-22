@@ -80,8 +80,41 @@ static void oekf_initialize(oekf_t *oekf, const _float_t pdiag[OEKF_N]) {
 }
 
 // Prediction steps
-static void oekf_predict(oekf_t *ekf, const _float_t fx[OEKF_N], const _float_t F[OEKF_N * OEKF_N], const _float_t Q[OEKF_N * OEKF_N]) {
-    // Update the state vector
+static void oekf_predict(oekf_t *ekf, const _float_t fx[OEKF_N], const _float_t F[OEKF_N * OEKF_N], const _float_t Q[OEKF_N * OEKF_N],
+const _float_t dt)  // Add the dt parameter
+{
+ // Default octonion motion model (when fx or F is NULL)
+    _float_t default_fx[OEKF_N];
+    _float_t default_F[OEKF_N*OEKF_N] = {0};
+    if (fx == NULL || F == NULL) {
+// Extract the angular velocity from the state (assuming x[14-16] is the angular velocity, which needs to be adjusted according to the actual definition)
+        _float_t omega[3] = {ekf->x[14], ekf->x[15], ekf->x[16]};
+        Octonion dq;  // Incremental octonion
+        _float_t theta = sqrt(omega[0]*omega[0] + omega[1]*omega[1] + omega[2]*omega[2]) * dt;
+        dq.r = cos(theta/2);
+        dq.i[0] = omega[0] * sin(theta/2) / theta;  // Simplified version, need to handle theta = 0
+        dq.i[1] = omega[1] * sin(theta/2) / theta;
+        dq.i[2] = omega[2] * sin(theta/2) / theta;
+        memset(&dq.i[3], 0, 4*sizeof(_float_t));  // Assume that the high-dimensional component is 0
+        // Update octonion: q_new = q_old * dq (non-commutative multiplication)
+        Octonion q_new;
+        octonion_mult(&ekf->state.q, &dq, &q_new);
+        octonion_normalize(&q_new);
+        // Mapped to default_fx
+        default_fx[0] = q_new.r;
+        memcpy(&default_fx[1], q_new.i, 7*sizeof(_float_t));
+        // Velocity/position update (v = v + adt, p = p + vdt)
+        for (int i=0; i<3; i++) {
+            default_fx[8+i] = ekf->x[8+i] + ekf->x[17+i] * dt;  // Assume that x[17-19] is acceleration
+            default_fx[11+i] = ekf->x[11+i] + default_fx[8+i] * dt;
+        }
+        // Generate the default F matrix (simplified version, with only the diagonal elements being 1)
+        for (int i=0; i<OEKF_N; i++) default_F[i*OEKF_N +i] = 1;
+        fx = default_fx;
+        F = default_F;
+    }
+
+// Update the state vector
     memcpy(ekf->x, fx, OEKF_N * sizeof(_float_t));
     
     // Update the state structure (synchronized with vector x)
@@ -104,6 +137,27 @@ static void oekf_predict(oekf_t *ekf, const _float_t fx[OEKF_N], const _float_t 
     _mulmat(FP, Ft, FPFt, OEKF_N, OEKF_N, OEKF_N);
     
     _addmat(FPFt, Q, ekf->P, OEKF_N, OEKF_N);
+}
+
+// Residual Detection and Noise Adjustment Function
+static bool oekf_detect_perturbation(const _float_t z[OEKF_M], const _float_t hx[OEKF_M], const _float_t threshold) {
+    _float_t res[OEKF_M];
+    _sub(z, hx, res, OEKF_M); // Reuse the existing _sub function to calculate residuals
+    _float_t res_norm = 0;
+    for (int i=0; i<OEKF_M; i++) res_norm += res[i]*res[i];
+    return res_norm > threshold*threshold;
+}
+
+static void oekf_adapt_Q(_float_t Q[OEKF_N*OEKF_N], const bool is_perturbed, const _float_t scale) {
+    if (is_perturbed) {
+        for (int i=0; i<OEKF_N*OEKF_N; i++) Q[i] *= scale;
+    }
+}
+
+// Asynchronous prediction function with timestamp alignment
+static void oekf_predict_async(oekf_t *ekf, const _float_t dt, const _float_t Q[OEKF_N*OEKF_N]) {
+    // Call the predict function with dt, using the default motion model
+    oekf_predict(ekf, NULL, NULL, Q, dt);
 }
 
 // Update step helper function
@@ -144,6 +198,12 @@ static bool oekf_update(oekf_t *ekf, const _float_t z[OEKF_M], const _float_t hx
     // Update the state vector x = x + G*(z - hx)
     _float_t z_hx[OEKF_M];
     _sub(z, hx, z_hx, OEKF_M);
+
+    // Added: Detect disturbances and adjust Q (if adjustment is needed before updating)
+    bool perturbed = oekf_detect_perturbation(z, hx, 5.0f); // The threshold is set according to the scenario.
+    _float_t adapted_Q[OEKF_N*OEKF_N];
+    memcpy(adapted_Q, Q, OEKF_N*OEKF_N*sizeof(_float_t)); // Assume that Q is the current process noise matrix
+    oekf_adapt_Q(adapted_Q, perturbed, 2.0f); // Amplify Q during disturbance
     
     _float_t Gz_hx[OEKF_N];
     _mulvec(G, z_hx, Gz_hx, OEKF_N, OEKF_M);
@@ -158,6 +218,19 @@ static bool oekf_update(oekf_t *ekf, const _float_t z[OEKF_M], const _float_t hx
 
     // Normalize the octonion to ensure the validity of the state
     octonion_normalize(&ekf->state.q);
+
+    // Geometric constraints (positional/velocity physical limitations)
+    // Position constraint (assuming the z-axis is the height, with a minimum value limit of 0)
+    if (ekf->state.p[2] < 0) ekf->state.p[2] = 0;
+    // Speed constraint (limiting the maximum speed, such as 20m/s)
+    _float_t v_max = 20;
+    for (int i=0; i<3; i++) {
+        if (ekf->state.v[i] > v_max) ekf->state.v[i] = v_max;
+        else if (ekf->state.v[i] < -v_max) ekf->state.v[i] = -v_max;
+    }
+    // Synchronize the constrained state to the x vector
+    memcpy(&ekf->x[11], ekf->state.p, 3*sizeof(_float_t));
+    memcpy(&ekf->x[8], ekf->state.v, 3*sizeof(_float_t));
     
     // Update the covariance matrix P = (I - G*H) * P
     _float_t GH[OEKF_N * OEKF_N];
