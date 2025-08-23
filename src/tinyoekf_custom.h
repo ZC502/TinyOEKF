@@ -20,14 +20,10 @@ static void outer(
 }
 
 /// @private
-static _float_t dot(const _float_t x[OEKF_N], const _float_t y[OEKF_N]) 
-{
+// Optimize the dot function to reduce variable accesses
+static _float_t dot(const _float_t x[OEKF_N], const _float_t y[OEKF_N]) {
     _float_t d = 0;
-
-    for (int k=0; k<OEKF_N; k++) {
-        d += x[k] * y[k];
-    }
-
+    for (int k=0; k<OEKF_N; k++) d += x[k] * y[k];
     return d;
 }
 
@@ -37,7 +33,7 @@ typedef struct {
     _float_t i[7];       // Seven imaginary parts (i[0] to i[6])
 } Octonion;
 
-// New: Octonion multiplication function
+// Octonion multiplication function
 static inline void octonion_mult(const Octonion *a, const Octonion *b, Octonion *c) {
     // Real part calculation
     c->r = a->r * b->r 
@@ -45,61 +41,62 @@ static inline void octonion_mult(const Octonion *a, const Octonion *b, Octonion 
          - a->i[3]*b->i[3] - a->i[4]*b->i[4] - a->i[5]*b->i[5] 
          - a->i[6]*b->i[6];
 
-    // Imaginary part e0 (i[0])
+   // Imaginary part e0 (i[0]): follows e0 = e1e2 = e3e5 = e4e6 = ... (the non-commutativity is reflected in the sign,
+        That is, e_i e_j = -e_j e_i, where i ≠ j, which is embodied in the form of (a->i[x]*b->i[y] - a->i[y]*b->i[x]))
     c->i[0] = a->r*b->i[0] + a->i[0]*b->r 
-            + (a->i[1]*b->i[3] - a->i[3]*b->i[1]) 
-            + (a->i[2]*b->i[6] - a->i[6]*b->i[2]) 
-            + (a->i[4]*b->i[2] - a->i[2]*b->i[4]) 
-            + (a->i[5]*b->i[1] - a->i[1]*b->i[5]) 
-            + (a->i[6]*b->i[5] - a->i[5]*b->i[6]);
+            + (a->i[1]*b->i[2] - a->i[2]*b->i[1])   // e1e2 = e0, e2e1 = -e0
+            + (a->i[3]*b->i[5] - a->i[5]*b->i[3])   // e3e5 = e0, e5e3 = -e0
+            + (a->i[4]*b->i[6] - a->i[6]*b->i[4])   // e4e6 = e0, e6e4 = -e0
+            + (a->i[2]*b->i[6] - a->i[6]*b->i[2])   // Standard multiplication table entry
+            - (a->i[1]*b->i[5] - a->i[5]*b->i[1]);  
 
-     // Imaginary part e1 (i[1])
+    // Imaginary part e1 (i[1])：e1=e2e0=e4e3=e5e6=...
     c->i[1] = a->r*b->i[1] + a->i[1]*b->r 
-            + (a->i[0]*b->i[3] - a->i[3]*b->i[0]) 
-            + (a->i[2]*b->i[4] - a->i[4]*b->i[2]) 
-            + (a->i[5]*b->i[2] - a->i[2]*b->i[5]) 
-            + (a->i[6]*b->i[5] - a->i[5]*b->i[6]) 
-            + (a->i[0]*b->i[5] - a->i[5]*b->i[0]);
+            + (a->i[2]*b->i[0] - a->i[0]*b->i[2])   // e2e0 = e1, e0e2 = -e1
+            + (a->i[4]*b->i[3] - a->i[3]*b->i[4])   // e4e3 = e1, e3e4 = -e1
+            + (a->i[5]*b->i[6] - a->i[6]*b->i[5])   // e5e6 = e1, e6e5 = -e1
+            + (a->i[0]*b->i[3] - a->i[3]*b->i[0])   // Standard multiplication table entry
+            - (a->i[2]*b->i[4] - a->i[4]*b->i[2]);  
 
-    // Imaginary part e2 (i[2])
+    // Imaginary part e2 (i[2])：e2=e0e1=e5e4=e6e3=...
     c->i[2] = a->r*b->i[2] + a->i[2]*b->r 
-            + (a->i[0]*b->i[6] - a->i[6]*b->i[0]) 
-            + (a->i[1]*b->i[4] - a->i[4]*b->i[1]) 
-            + (a->i[3]*b->i[5] - a->i[5]*b->i[3]) 
-            + (a->i[4]*b->i[0] - a->i[0]*b->i[4]) 
-            + (a->i[5]*b->i[1] - a->i[1]*b->i[5]);
+            + (a->i[0]*b->i[1] - a->i[1]*b->i[0])   // e0e1 = e2, e1e0 = -e2
+            + (a->i[5]*b->i[4] - a->i[4]*b->i[5])   // e5e4 = e2, e4e5 = -e2
+            + (a->i[6]*b->i[3] - a->i[3]*b->i[6])   // e6e3 = e2, e3e6 = -e2
+            + (a->i[1]*b->i[4] - a->i[4]*b->i[1])   // Standard multiplication table entry
+            - (a->i[0]*b->i[6] - a->i[6]*b->i[0]);  
 
-    // Imaginary part e3 (i[3])
+    // Imaginary part e3 (i[3])：e3=e0e5=e1e4=e6e2=...
     c->i[3] = a->r*b->i[3] + a->i[3]*b->r 
-            + (a->i[1]*b->i[0] - a->i[0]*b->i[1]) 
-            + (a->i[2]*b->i[5] - a->i[5]*b->i[2]) 
-            + (a->i[4]*b->i[1] - a->i[1]*b->i[4]) 
-            + (a->i[6]*b->i[4] - a->i[4]*b->i[6]) 
-            + (a->i[0]*b->i[6] - a->i[6]*b->i[0]);
+            + (a->i[0]*b->i[5] - a->i[5]*b->i[0])   // e0e5 = e3, e5e0 = -e3
+            + (a->i[1]*b->i[4] - a->i[4]*b->i[1])   // e1e4 = e3, e4e1 = -e3
+            + (a->i[6]*b->i[2] - a->i[2]*b->i[6])   // e6e2 = e3, e2e6 = -e3
+            + (a->i[3]*b->i[5] - a->i[5]*b->i[3])   // Standard multiplication table entry
+            - (a->i[1]*b->i[0] - a->i[0]*b->i[1]);  
 
-    // Imaginary part e4 (i[4])
+    // Imaginary part e4 (i[4])：e4=e1e3=e2e6=e5e0=...
     c->i[4] = a->r*b->i[4] + a->i[4]*b->r 
-            + (a->i[1]*b->i[2] - a->i[2]*b->i[1]) 
-            + (a->i[3]*b->i[1] - a->i[1]*b->i[3]) 
-            + (a->i[4]*b->i[5] - a->i[5]*b->i[4]) 
-            + (a->i[6]*b->i[3] - a->i[3]*b->i[6]) 
-            + (a->i[0]*b->i[2] - a->i[2]*b->i[0]);
+            + (a->i[1]*b->i[3] - a->i[3]*b->i[1])   // e1e3 = e4, e3e1 = -e4
+            + (a->i[2]*b->i[6] - a->i[6]*b->i[2])   // e2e6 = e4, e6e2 = -e4
+            + (a->i[5]*b->i[0] - a->i[0]*b->i[5])   // e5e0 = e4, e0e5 = -e4
+            + (a->i[4]*b->i[5] - a->i[5]*b->i[4])   // Standard multiplication table entry
+            - (a->i[1]*b->i[2] - a->i[2]*b->i[1]);  
 
-    // Imaginary part e5 (i[5])
+    // Imaginary part e5 (i[5])：e5=e0e3=e2e4=e6e1=...
     c->i[5] = a->r*b->i[5] + a->i[5]*b->r 
-            + (a->i[1]*b->i[2] - a->i[2]*b->i[1]) 
-            + (a->i[2]*b->i[3] - a->i[3]*b->i[2]) 
-            + (a->i[4]*b->i[6] - a->i[6]*b->i[4]) 
-            + (a->i[6]*b->i[0] - a->i[0]*b->i[6]) 
-            + (a->i[0]*b->i[1] - a->i[1]*b->i[0]);
+            + (a->i[0]*b->i[3] - a->i[3]*b->i[0])   // e0e3 = e5, e3e0 = -e5
+            + (a->i[2]*b->i[4] - a->i[4]*b->i[2])   // e2e4 = e5, e4e2 = -e5
+            + (a->i[6]*b->i[1] - a->i[1]*b->i[6])   // e6e1 = e5, e1e6 = -e5
+            + (a->i[2]*b->i[3] - a->i[3]*b->i[2])   // Standard multiplication table entry
+            - (a->i[1]*b->i[2] - a->i[2]*b->i[1]);  
 
-    // Imaginary part e6 (i[6])
+    // Imaginary part e6 (i[6])：e6=e0e4=e1e5=e3e2=...
     c->i[6] = a->r*b->i[6] + a->i[6]*b->r 
-            + (a->i[0]*b->i[2] - a->i[2]*b->i[0]) 
-            + (a->i[1]*b->i[5] - a->i[5]*b->i[1]) 
-            + (a->i[4]*b->i[5] - a->i[5]*b->i[4]) 
-            + (a->i[3]*b->i[6] - a->i[6]*b->i[3]) 
-            + (a->i[0]*b->i[3] - a->i[3]*b->i[0]);
+            + (a->i[0]*b->i[4] - a->i[4]*b->i[0])   // e0e4 = e6, e4e0 = -e6
+            + (a->i[1]*b->i[5] - a->i[5]*b->i[1])   // e1e5 = e6, e5e1 = -e6
+            + (a->i[3]*b->i[2] - a->i[2]*b->i[3])   // e3e2 = e6, e2e3 = -e6
+            + (a->i[4]*b->i[6] - a->i[6]*b->i[4])   // Standard multiplication table entry
+            - (a->i[0]*b->i[2] - a->i[2]*b->i[0]);  
 }
 
 // Octonion normalization function
@@ -165,7 +162,7 @@ static void ekf_custom_cleanup_covariance(
   * 
   */
 static void ekf_custom_scalar_update(
-        oekf_t * ekf,
+        oekf_t * ekf,  
         const _float_t z,
         const _float_t hx,
         const _float_t h[OEKF_N], 
