@@ -235,8 +235,8 @@ int main(int argc, char ** argv)
         _float_t H[OEKF_M*OEKF_N] = {0};
         run_model(&oekf, SV_Pos, fx, F, hx, H);
 
-        // Replace with the prediction function of the Octonion EKF
-        oekf_predict(&oekf, fx, F, Q);
+        // Replace with the prediction function of the Octonion EKF（Pass in the time interval T, which is defined as static const double T = 1 in gps.c;）
+        oekf_predict(&oekf, fx, F, Q, T);  // T is 1 second, which is consistent with the positioning interval.
 
         // Replace with the update function of the Octonion EKF
         oekf_update(&oekf, SV_Rho, hx, H, R);
