@@ -47,8 +47,6 @@ static const float EPS = 1e-4;
 
 // So process model Jacobian is identity matrix
 
-static SFE_BMP180 baro;
-
 // Adapted from https://github.com/sparkfun/BMP180_Breakout
 static void getBaroReadings(double & T, double & P) {
     char status = bmp.startTemperature();
@@ -111,7 +109,7 @@ void loop() {
 
     // 2. Construct observations (1-dimensional: temperature)
       // Reuse the imaginary part i6 (x[7]) of the octonion to store the temperature
-    oekf.x[7] = initial_temp;  // Initialize temperature
+    oekf.x[7] = 25.0f;  // Reuse the initial temperature in setup()
       _float_t z_lm35[1] = {lm35_temp};
     _float_t hx_lm35[1] = {oekf.x[7]};  // Predict temperature (x[7])
     
@@ -130,28 +128,39 @@ void loop() {
 
     // Processing BMP180 (low-frequency air pressure + temperature): prediction + update
     if (now - bmp_last_time >= BMP_RATE) {
-        // Read BMP data
-        float bmp_pressure = bmp.readPressure() / 100.0f;  // hectopascal
-        float bmp_temp = bmp.readTemperature();
+        
+       double T_bmp, P_bmp;
+      getBaroReadings(T_bmp, P_bmp);  
+      float bmp_pressure = P_bmp / 100.0f;  
+       float bmp_temp = (float)T_bmp;
 
         // 1. Asynchronous prediction
         oekf_predict_async(&oekf, BMP_RATE, Q_bmp);
 
-        // 2. Construct observations (air pressure, temperature)
-        _float_t z[2] = {bmp_pressure, bmp_temp};
-        _float_t hx[2] = {oekf.state.p[2], oekf.x[7]};  // Position z corresponds to air pressure, and x[7] corresponds to temperature
+        // 2. Barometric pressure update (associated with position z)
+        _float_t h_p[1] = {oekf.state.p[2]};
+        _float_t H_p[OEKF_N] = {0};
+       H_p[13] = 1;  // Position z corresponds to x[13]
+       ekf_custom_scalar_update(&oekf, z[0], h_p[0], H_p, R_bmp[0]);
 
-        // 3. Observation matrix H (2x14)
+       // 3. Temperature update (associated with x[7])
+       _float_t h_t[1] = {oekf.x[7]};
+       _float_t H_t[OEKF_N] = {0};
+       H_t[7] = 1;
+       ekf_custom_scalar_update(&oekf, z[1], h_t[0], H_t, R_bmp[3]);  // R_bmp[3] is temperature noise
+
+        // 4. Observation matrix H (2x14)
         _float_t H[2*OEKF_N] = {0};
         H[0*OEKF_N +13] = 1;  // Position z (x[13])
         H[1*OEKF_N +7] = 1;   // Temperature (x[7])
 
-        // 4. Disturbance detection (Threshold: air pressure 3hPa, temperature 2°C)
+        // 5. Disturbance detection (Threshold: air pressure 3hPa, temperature 2°C)
         _float_t res_p = z[0] - hx[0];
         _float_t res_t = z[1] - hx[1];
         bool perturbed = (fabs(res_p) > 3.0f) || (fabs(res_t) > 2.0f);
          oekf_adapt_Q(Q_bmp, perturbed, 2.0f);  // Amplify Q during disturbance
-        // 5. Update （Note: It is necessary to ensure that OEKF_M >= 2, or modify it to a custom update.）
+        
+        // 6. Update （Note: It is necessary to ensure that OEKF_M >= 2, or modify it to a custom update.）
         oekf_update(&oekf, z, hx, H, R_bmp);
 
         // Application Constraints
@@ -162,7 +171,13 @@ void loop() {
         Serial.print(oekf.state.p[2]);
         Serial.print(" m, Fused Temp: ");
         Serial.println(oekf.x[7]);
-
+        Serial.print(" BMP180Press:");
+        Serial.print(bmp_pressure);
+        Serial.print(" BMP180Temp:");
+        Serial.print(bmp_temp);
+        Serial.print(" LM35Temp:");
+        Serial.println(lm35_temp);  // It is necessary to ensure that lm35_temp is within the scope (it can be defined as a global variable)
+        
         bmp_last_time = now;
     }
     }
@@ -174,17 +189,6 @@ void loop() {
     //   hx[0] = pow(this->x[0], 1.03);
     //   hx[1] = 1.005 * this->x[1];
     //   hx[2] = .9987 * this->x[1] + .001;
-
-    // Report measured and predicte/fused values
-    Serial.print("BMP180Press:");
-    Serial.print(z[0]);
-    Serial.print(" ");
-    Serial.print(" BMP180Temp:");
-    Serial.print(z[1]);
-    Serial.print(" LM35Temp:");
-    Serial.print(z[2]);
-    Serial.print(" EKFPress:");
-    Serial.print(" EKFTemp:");
 
 
 // Extended explanation: If adding MPU6050 (IMU, 200Hz) and GPS (1Hz), the following logic can be referred to:
