@@ -124,7 +124,9 @@ const _float_t dt)  // Add the dt parameter
     memcpy(ekf->state.q.i, &ekf->x[1], 7 * sizeof(_float_t));
     memcpy(ekf->state.v, &ekf->x[8], 3 * sizeof(_float_t));
     memcpy(ekf->state.p, &ekf->x[11], 3 * sizeof(_float_t));
-
+    // Synchronize temperature (x[14] -> state.temp)
+    ekf->state.temp = ekf->x[14];
+    
     // Normalize the octonion to ensure the validity of the state
     octonion_normalize(&ekf->state.q);
     
@@ -217,7 +219,9 @@ static bool oekf_update(oekf_t *ekf, const _float_t z[OEKF_M], const _float_t hx
     memcpy(ekf->state.q.i, &ekf->x[1], 7 * sizeof(_float_t));
     memcpy(ekf->state.v, &ekf->x[8], 3 * sizeof(_float_t));
     memcpy(ekf->state.p, &ekf->x[11], 3 * sizeof(_float_t));
-
+    // Synchronize temperature (x[14] -> state.temp)
+    ekf->state.temp = ekf->x[14];
+    
     // Normalize the octonion to ensure the validity of the state
     octonion_normalize(&ekf->state.q);
 
