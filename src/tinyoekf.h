@@ -18,7 +18,7 @@
 #define _float_t float
 #endif
 
-#define OEKF_N 14  // 8(octonions) + 3(velocity) + 3(position)
+#define OEKF_N 15  // 8(octonions attitude) + 3(velocity) + 3(position)+ 1(temperature)
 #define OEKF_M 6   // Observation dimension
 
 // Linear algebra tool functions
@@ -46,6 +46,7 @@ typedef struct {
     Octonion q;        // Octonions (8-dimensional)
     _float_t v[3];     // Velocity (3D)
     _float_t p[3];     // Position (3D)
+    _float_t temp;     // Temperature（1D）
 } OEKF_State;
 
 // Main structure of OEKF
@@ -70,6 +71,7 @@ static void oekf_initialize(oekf_t *oekf, const _float_t pdiag[OEKF_N]) {
     memcpy(&oekf->x[1], oekf->state.q.i, 7 * sizeof(_float_t));
     memcpy(&oekf->x[8], oekf->state.v, 3 * sizeof(_float_t));
     memcpy(&oekf->x[11], oekf->state.p, 3 * sizeof(_float_t));
+    oekf->x[14] = oekf->state.temp;  // Temperature is mapped to x[14]
     
     // Initialize the covariance matrix (diagonal matrix)
     for (int i = 0; i < OEKF_N; ++i) {
