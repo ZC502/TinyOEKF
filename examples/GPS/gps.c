@@ -117,6 +117,10 @@ static void init(oekf_t * oekf)
     memcpy(&oekf->x[1], oekf->state.q.i, 7*sizeof(_float_t));
     memcpy(&oekf->x[8], oekf->state.v, 3*sizeof(_float_t));
     memcpy(&oekf->x[11], oekf->state.p, 3*sizeof(_float_t));
+   
+    // Reuse the imaginary part i6 (x[7]) of the octonion to store the temperature and initialize the temperature value
+    _float_t initial_temp = 25.0;  // Example initial temperature
+    oekf->x[7] = initial_temp;  //  x[7] corresponds to the imaginary part i6 of the octonion and is used to store temperature.
 }
 
 static void run_model(
