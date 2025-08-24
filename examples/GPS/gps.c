@@ -76,6 +76,8 @@ static const _float_t Q[OEKF_N*OEKF_N] = {
     0,0,0,0,0,0,0,0, 0,0,0, xyz3, xyz2,0,   // x
     0,0,0,0,0,0,0,0, 0,0,0, xyz1, xyz0,0,   // y
     0,0,0,0,0,0,0,0, 0,0,0, 0,0, xyz3       // z
+    // Temperature part (1D)
+    0,0,0,0,0,0,0,0, 0,0,0, 0,0,0,0.01        // Temperature process noise (set to 0.01)
 };
 
 // Set fixed measurement noise covariance matrix R ----------------------------
@@ -95,6 +97,7 @@ static void init(oekf_t * oekf)
         1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,  // Octonion (8-dimensional, small noise)
         10,10,10,                                  // Velocity (3D, moderate noise)
         10,10,10                                   // Position (3D, moderate noise)
+        1.0                                        // Temperature (1-dimensional, new, initial variance set to 1.0)
     };
     oekf_initialize(oekf, pdiag);
 
@@ -118,9 +121,8 @@ static void init(oekf_t * oekf)
     memcpy(&oekf->x[8], oekf->state.v, 3*sizeof(_float_t));
     memcpy(&oekf->x[11], oekf->state.p, 3*sizeof(_float_t));
    
-    // Reuse the imaginary part i6 (x[7]) of the octonion to store the temperature and initialize the temperature value
-    _float_t initial_temp = 25.0;  // Example initial temperature
-    oekf->x[7] = initial_temp;  //  x[7] corresponds to the imaginary part i6 of the octonion and is used to store temperature.
+    // The temperature is initialized to state.temp
+    oekf->state.temp = 25.0;  // Initial temperature 25℃
 }
 
 static void run_model(
@@ -139,6 +141,7 @@ static void run_model(
     // The octonion part remains unchanged (when there is no attitude update)
     fx[0] = oekf->x[0];  // real part
     memcpy(&fx[1], &oekf->x[1], 7*sizeof(_float_t));  // Imaginary part
+    fx[14] = oekf->x[14];  // Temperature prediction value = Current temperature (new)
 
     // Speed prediction (v = v_prev)
     memcpy(&fx[8], &oekf->x[8], 3*sizeof(_float_t));
