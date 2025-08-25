@@ -10,6 +10,7 @@
 #include <SFE_BMP180.h>
 #include <Wire.h>
 
+float lm35_temp;  // LM35 temperature sensor reading
 static const uint8_t LM35_PIN = A0;
 
 // Original sensor object
@@ -28,6 +29,15 @@ _float_t Q_bmp[OEKF_N*OEKF_N] = {0};   // BMP process noise
 _float_t R_lm35[1*1] = {0.1f};         // LM35 observation noise (temperature)
 _float_t R_bmp[2*2] = {0.5f, 0, 0, 0.5f};// BMP observation noise (air pressure, temperature)
 
+// IMU and GPS asynchronous parameters
+unsigned long imu_last_time = 0;    // IMU timestamp (milliseconds)
+unsigned long gps_last_time = 0;    // GPS timestamp (milliseconds)
+const float IMU_RATE = 0.005f;      // 200Hz (0.005-second interval)
+const float GPS_RATE = 1.0f;        // 1Hz (1-second interval)
+_float_t Q_imu[OEKF_N*OEKF_N] = {0}; // IMU process noise
+_float_t Q_gps[OEKF_N*OEKF_N] = {0}; // GPS process noise
+_float_t R_gps[3*3] = {5.0f,0,0, 0,5.0f,0, 0,0,5.0f}; // GPS observation noise (position)
+
 // Initialization process noise Q (diagonal matrix)
 void init_Q(_float_t Q[OEKF_N*OEKF_N], _float_t val) {
     memset(Q, 0, OEKF_N*OEKF_N*sizeof(_float_t));
@@ -36,11 +46,19 @@ void init_Q(_float_t Q[OEKF_N*OEKF_N], _float_t val) {
 
 // State constraint function
 void apply_constraints(oekf_t *oekf) {
-    // Height is non-negative
-    if (oekf->state.p[2] < 0) oekf->state.p[2] = 0;
-    // Temperature range constraints (such as -40~85°C)
-    if (oekf->x[14] < -40) oekf->x[14] = -40;
-    else if (oekf->x[14] > 85) oekf->x[14] = 85;
+    // Height non-negativity constraint (synchronized to the x vector)
+    if (oekf->state.p[2] < 0) {
+        oekf->state.p[2] = 0;
+        oekf->x[13] = 0;  // Position z corresponds to x[13]
+    }
+    // Temperature constraint (synchronized to the state structure)
+    if (oekf->x[14] < -40) {
+        oekf->x[14] = -40;
+        oekf->state.temp = -40;
+    } else if (oekf->x[14] > 85) {
+        oekf->x[14] = 85;
+        oekf->state.temp = 85;
+    }
 }
 
 static const float EPS = 1e-4;
@@ -74,9 +92,6 @@ void setup()
         while (1);
     }
 
-    // Start reading from baro
-    bmp.begin();
-
     // Set up to read from LM35
     analogReference(INTERNAL);
     
@@ -93,8 +108,11 @@ void setup()
     init_Q(Q_lm35, 1e-4f);  // The process noise of LM35 is relatively small.
     init_Q(Q_bmp, 1e-3f);   // The BMP process noise is slightly larger
 
-    // Initialize the temperature state (reuse x[7])
+    // Initialize the temperature state ( x[14])
     oekf.x[14] = 25.0f;  // The initial temperature is assumed to be 25°C
+  
+    init_Q(Q_imu, 1e-5f);   // The high-frequency noise of IMU is relatively small.
+    init_Q(Q_gps, 1e-2f);   // GPS has relatively large low-frequency noise
 }
 
 void loop() {
@@ -109,7 +127,6 @@ void loop() {
     oekf_predict_async(&oekf, LM35_RATE, Q_lm35);
 
     // 2. Construct observations (1-dimensional: temperature)
-      // Reuse the imaginary part i6 (x[7]) of the octonion to store the temperature
       _float_t z_lm35[1] = {lm35_temp};
       _float_t hx_lm35[1] = {oekf.x[14]};  // The predicted temperature is x[14]
     
@@ -132,8 +149,15 @@ void loop() {
        double T_bmp, P_bmp;
       getBaroReadings(T_bmp, P_bmp);  
       float bmp_pressure = P_bmp / 100.0f;  
-       float bmp_temp = (float)T_bmp;
-       
+      float bmp_temp = (float)T_bmp;
+      hx[0] = pressure_to_altitude(bmp_pressure);  // Barometric pressure to altitude as predictive observation
+      
+       // Barometric pressure to altitude function (refer to the distance calculation logic in gps.c)
+       float pressure_to_altitude(float pressure) {
+      // Simplified model: Air pressure decreases as altitude increases (needs to be calibrated according to actual parameters)
+      return (101325.0f - pressure) * 0.01f;  // Example conversion
+}
+ 
         // Define the observed value z and the predicted value hx
        _float_t z[2] = {bmp_pressure, bmp_temp};  // Observed values of air pressure and temperature
        _float_t hx[2] = {oekf.state.p[2], oekf.x[14]};  // Air pressure corresponds to position z, and temperature corresponds to x[14]
@@ -160,7 +184,10 @@ void loop() {
         _float_t res_p = z[0] - hx[0];
         _float_t res_t = z[1] - hx[1];
         bool perturbed = (fabs(res_p) > 3.0f) || (fabs(res_t) > 2.0f);
-         oekf_adapt_Q(Q_bmp, perturbed, 2.0f);  // Amplify Q during disturbance
+         _float_t temp_Q_bmp[OEKF_N*OEKF_N];
+         memcpy(temp_Q_bmp, Q_bmp, OEKF_N*OEKF_N*sizeof(_float_t)); // Copy the original Q
+         oekf_adapt_Q(temp_Q_bmp, perturbed, 2.0f);  // Adjust the temporary Q
+         oekf_predict_async(&oekf, BMP_RATE, temp_Q_bmp);  // Using the adjusted Q prediction
         
         // 6. Update （Note: It is necessary to ensure that OEKF_M >= 2, or modify it to a custom update.）
         oekf_update(&oekf, z, hx, H, R_bmp);
@@ -172,7 +199,7 @@ void loop() {
         Serial.print("Fused Altitude: ");
         Serial.print(oekf.state.p[2]);
         Serial.print(" m, Fused Temp: ");
-        Serial.println(oekf.x[7]);
+        Serial.println(oekf.x[14]);
         Serial.print(" BMP180Press:");
         Serial.print(bmp_pressure);
         Serial.print(" BMP180Temp:");
@@ -182,7 +209,31 @@ void loop() {
         
         bmp_last_time = now;
     }
+        // Processing IMU data (high frequency)
+        if (now - imu_last_time >= IMU_RATE) {
+        _float_t z_imu[3] = {/*Angular velocity data*/};
+        
+        // Prediction: Use the default motion model and pass in the time interval
+        oekf_predict_async(&oekf, IMU_RATE, Q_imu);  // Q_imu is the process noise corresponding to the IMU
+        imu_last_time = now;
     }
+
+        // Processing GPS data (low frequency)
+        if (now - gps_last_time >= GPS_RATE) {
+        _float_t z_gps[3] = {/*Location data*/};
+        _float_t hx[3] = {oekf.state.p[0], oekf.state.p[1], oekf.state.p[2]}; // Predictive observation
+        _float_t H[3*OEKF_N] = {0}; 
+        H[0*OEKF_N + 11] = 1;  // Position x corresponds to state x[11]
+        H[1*OEKF_N + 12] = 1;  // Position y corresponds to state x[12]
+        H[2*OEKF_N + 13] = 1;  // Position z corresponds to state x[13]
+        
+        // Detect disturbances (residual threshold set to 5m)
+        bool perturbed = oekf_detect_perturbation(z_gps, hx, 5);
+        oekf_adapt_Q(Q_gps, perturbed, 2.0);      // When disturbed, Q is amplified by a factor of 2.
+        oekf_update(&oekf, z_gps, hx, H, R_gps);  // R_gps is the GPS observation noise
+        gps_last_time = now;
+    }
+}
         
     // Measurement function simplifies the relationship between state
     // and sensor readings for convenience.  A more realistic
