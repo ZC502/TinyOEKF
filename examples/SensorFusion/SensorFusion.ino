@@ -39,8 +39,8 @@ void apply_constraints(oekf_t *oekf) {
     // Height is non-negative
     if (oekf->state.p[2] < 0) oekf->state.p[2] = 0;
     // Temperature range constraints (such as -40~85°C)
-    if (oekf->x[7] < -40) oekf->x[7] = -40;
-    else if (oekf->x[7] > 85) oekf->x[7] = 85;
+    if (oekf->x[14] < -40) oekf->x[14] = -40;
+    else if (oekf->x[14] > 85) oekf->x[14] = 85;
 }
 
 static const float EPS = 1e-4;
@@ -75,7 +75,7 @@ void setup()
     }
 
     // Start reading from baro
-    baro.begin();
+    bmp.begin();
 
     // Set up to read from LM35
     analogReference(INTERNAL);
@@ -83,6 +83,7 @@ void setup()
      // Initialize the OEKF state covariance
     _float_t pdiag[OEKF_N] = {
         1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,  // Octonion (attitude)
+        0.5f,                                     // temperature
         0.1f,0.1f,0.1f,                            // speed
         1.0f,1.0f,1.0f                             // Position (mainly height)
     };
@@ -93,7 +94,7 @@ void setup()
     init_Q(Q_bmp, 1e-3f);   // The BMP process noise is slightly larger
 
     // Initialize the temperature state (reuse x[7])
-    oekf.x[7] = 25.0f;  // The initial temperature is assumed to be 25°C
+    oekf.x[14] = 25.0f;  // The initial temperature is assumed to be 25°C
 }
 
 void loop() {
@@ -102,20 +103,19 @@ void loop() {
     // Processing LM35 (high-frequency temperature sensor): prediction + update
   if (now - lm35_last_time >= LM35_RATE) {
     // Read the LM35 temperature
-    float lm35_temp = (analogRead(LM35_PIN) * 0.0048828125) * 100.0;
+    lm35_temp = (analogRead(LM35_PIN) * 0.0048828125) * 100.0;
 
     // 1. Asynchronous prediction
     oekf_predict_async(&oekf, LM35_RATE, Q_lm35);
 
     // 2. Construct observations (1-dimensional: temperature)
       // Reuse the imaginary part i6 (x[7]) of the octonion to store the temperature
-    oekf.x[7] = 25.0f;  // Reuse the initial temperature in setup()
       _float_t z_lm35[1] = {lm35_temp};
-    _float_t hx_lm35[1] = {oekf.x[7]};  // Predict temperature (x[7])
+      _float_t hx_lm35[1] = {oekf.x[14]};  // The predicted temperature is x[14]
     
       // 3. Observation matrix H (1x14): only associated with the temperature state
     _float_t H_lm35[1*OEKF_N] = {0};
-    H_lm35[0*OEKF_N +7] = 1;
+    H_lm35[0*OEKF_N +14] = 1;  // Observation matrix associated with x[14]
 
     // 4. Update (1-dimensional observation)
     ekf_custom_scalar_update(&oekf, z_lm35[0], hx_lm35[0], H_lm35, R_lm35[0]);
@@ -133,7 +133,11 @@ void loop() {
       getBaroReadings(T_bmp, P_bmp);  
       float bmp_pressure = P_bmp / 100.0f;  
        float bmp_temp = (float)T_bmp;
-
+       
+        // Define the observed value z and the predicted value hx
+       _float_t z[2] = {bmp_pressure, bmp_temp};  // Observed values of air pressure and temperature
+       _float_t hx[2] = {oekf.state.p[2], oekf.x[14]};  // Air pressure corresponds to position z, and temperature corresponds to x[14]
+        
         // 1. Asynchronous prediction
         oekf_predict_async(&oekf, BMP_RATE, Q_bmp);
 
@@ -141,18 +145,16 @@ void loop() {
         _float_t h_p[1] = {oekf.state.p[2]};
         _float_t H_p[OEKF_N] = {0};
        H_p[13] = 1;  // Position z corresponds to x[13]
-       ekf_custom_scalar_update(&oekf, z[0], h_p[0], H_p, R_bmp[0]);
 
-       // 3. Temperature update (associated with x[7])
-       _float_t h_t[1] = {oekf.x[7]};
-       _float_t H_t[OEKF_N] = {0};
-       H_t[7] = 1;
-       ekf_custom_scalar_update(&oekf, z[1], h_t[0], H_t, R_bmp[3]);  // R_bmp[3] is temperature noise
+       // 3. Temperature update (associated with x[14])
+      _float_t h_t[1] = {oekf.x[14]};  // The temperature state is x[14]
+      _float_t H_t[OEKF_N] = {0};
+      H_t[14] = 1;  // Associate x[14]
 
         // 4. Observation matrix H (2x14)
         _float_t H[2*OEKF_N] = {0};
         H[0*OEKF_N +13] = 1;  // Position z (x[13])
-        H[1*OEKF_N +7] = 1;   // Temperature (x[7])
+        H[1*OEKF_N +14] = 1;  // Temperature (x[14])
 
         // 5. Disturbance detection (Threshold: air pressure 3hPa, temperature 2°C)
         _float_t res_p = z[0] - hx[0];
