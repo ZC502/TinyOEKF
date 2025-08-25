@@ -77,7 +77,7 @@ static const _float_t Q[OEKF_N*OEKF_N] = {
     0,0,0,0,0,0,0,0, 0,0,0, xyz1, xyz0,0,   // y
     0,0,0,0,0,0,0,0, 0,0,0, 0,0, xyz3       // z
     // Temperature part (1D)
-    0,0,0,0,0,0,0,0, 0,0,0, 0,0,0,0.01        // Temperature process noise (set to 0.01)
+    0,0,0,0,0,0,0,0, 0,0,0, 0,0,0,0.01,     // Temperature process noise (set to 0.01)
 };
 
 // Set fixed measurement noise covariance matrix R ----------------------------
@@ -92,12 +92,12 @@ static const double R[4*4] = {
 
 static void init(oekf_t * oekf)
 {
-    // Initialize the diagonal of the 14-dimensional covariance matrix (quaternion + velocity + position)
+    // Initialize the diagonal of the 15-dimensional covariance matrix (quaternion + velocity + position+Temperature)
     const _float_t pdiag[OEKF_N] = {
-        1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,  // Octonion (8-dimensional, small noise)
-        10,10,10,                                  // Velocity (3D, moderate noise)
-        10,10,10                                   // Position (3D, moderate noise)
-        1.0                                        // Temperature (1-dimensional, new, initial variance set to 1.0)
+        1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,1e-3,    // Octonion (8-dimensional, small noise)
+        10,10,10,                                   // Velocity (3D, moderate noise)
+        10,10,10,                                   // Position (3D, moderate noise)
+        1.0                                         // Temperature (1-dimensional, new, initial variance set to 1.0)
     };
     oekf_initialize(oekf, pdiag);
 
