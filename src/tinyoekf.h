@@ -204,10 +204,7 @@ static bool oekf_update(oekf_t *ekf, const _float_t z[OEKF_M], const _float_t hx
     _sub(z, hx, z_hx, OEKF_M);
 
     // Added: Detect disturbances and adjust Q (if adjustment is needed before updating)
-    bool perturbed = oekf_detect_perturbation(z, hx, 5.0f); // The threshold is set according to the scenario.
     _float_t adapted_Q[OEKF_N*OEKF_N];
-    memcpy(adapted_Q, Q, OEKF_N*OEKF_N*sizeof(_float_t)); // Assume that Q is the current process noise matrix
-    oekf_adapt_Q(adapted_Q, perturbed, 2.0f); // Amplify Q during disturbance
     
     _float_t Gz_hx[OEKF_N];
     _mulvec(G, z_hx, Gz_hx, OEKF_N, OEKF_M);
