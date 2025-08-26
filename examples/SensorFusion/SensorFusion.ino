@@ -76,6 +76,11 @@ static void getBaroReadings(double & T, double & P) {
             if (status != 0) {
                 delay(status);
                 status = bmp.getPressure(P, T);
+// Barometric pressure to altitude function (refer to the distance calculation logic in gps.c)
+       float pressure_to_altitude(float pressure) {
+      // Simplified model: Air pressure decreases as altitude increases (needs to be calibrated according to actual parameters)
+      return (101325.0f - pressure) * 0.01f;  // Example conversion
+}
             }
         }
     }
@@ -83,9 +88,6 @@ static void getBaroReadings(double & T, double & P) {
 
 void setup() 
 {
-    // Use identity matrix as initiali covariance matrix
-    const float Pdiag[OEKF_N] = {1, 1};
-
     Serial.begin(115200);
      if (!bmp.begin()) {
         Serial.println("Could not find BMP180!");
@@ -150,37 +152,30 @@ void loop() {
       getBaroReadings(T_bmp, P_bmp);  
       float bmp_pressure = P_bmp / 100.0f;  
       float bmp_temp = (float)T_bmp;
+      _float_t hx[2];
       hx[0] = pressure_to_altitude(bmp_pressure);  // Barometric pressure to altitude as predictive observation
-      
-       // Barometric pressure to altitude function (refer to the distance calculation logic in gps.c)
-       float pressure_to_altitude(float pressure) {
-      // Simplified model: Air pressure decreases as altitude increases (needs to be calibrated according to actual parameters)
-      return (101325.0f - pressure) * 0.01f;  // Example conversion
-}
- 
-        // Define the observed value z and the predicted value hx
+      hx[1] = oekf.x[14];  // Temperature prediction value
+        
+    // Define the observed value z and the predicted value hx
        _float_t z[2] = {bmp_pressure, bmp_temp};  // Observed values of air pressure and temperature
        _float_t hx[2] = {oekf.state.p[2], oekf.x[14]};  // Air pressure corresponds to position z, and temperature corresponds to x[14]
         
-        // 1. Asynchronous prediction
-        oekf_predict_async(&oekf, BMP_RATE, Q_bmp);
-
-        // 2. Barometric pressure update (associated with position z)
+        // 1. Barometric pressure update (associated with position z)
         _float_t h_p[1] = {oekf.state.p[2]};
         _float_t H_p[OEKF_N] = {0};
        H_p[13] = 1;  // Position z corresponds to x[13]
 
-       // 3. Temperature update (associated with x[14])
+       // 2. Temperature update (associated with x[14])
       _float_t h_t[1] = {oekf.x[14]};  // The temperature state is x[14]
       _float_t H_t[OEKF_N] = {0};
       H_t[14] = 1;  // Associate x[14]
 
-        // 4. Observation matrix H (2x14)
+        // 3. Observation matrix H (2x14)
         _float_t H[2*OEKF_N] = {0};
         H[0*OEKF_N +13] = 1;  // Position z (x[13])
         H[1*OEKF_N +14] = 1;  // Temperature (x[14])
 
-        // 5. Disturbance detection (Threshold: air pressure 3hPa, temperature 2°C)
+        // 4. Disturbance detection (Threshold: air pressure 3hPa, temperature 2°C)
         _float_t res_p = z[0] - hx[0];
         _float_t res_t = z[1] - hx[1];
         bool perturbed = (fabs(res_p) > 3.0f) || (fabs(res_t) > 2.0f);
@@ -189,8 +184,20 @@ void loop() {
          oekf_adapt_Q(temp_Q_bmp, perturbed, 2.0f);  // Adjust the temporary Q
          oekf_predict_async(&oekf, BMP_RATE, temp_Q_bmp);  // Using the adjusted Q prediction
         
-        // 6. Update （Note: It is necessary to ensure that OEKF_M >= 2, or modify it to a custom update.）
-        oekf_update(&oekf, z, hx, H, R_bmp);
+        // 5. Update （Note: It is necessary to ensure that OEKF_M >= 2, or modify it to a custom update.）
+        // Barometric pressure update (1D)
+        _float_t z_p[1] = {bmp_pressure};
+        _float_t hx_p[1] = {hx[0]};
+        _float_t H_p[1*OEKF_N] = {0};
+        H_p[0*OEKF_N +13] = 1;  // Pressure-related position z (x[13])
+        ekf_custom_scalar_update(&oekf, z_p[0], hx_p[0], H_p, R_bmp[0]);
+
+       // Temperature Update (1D)
+       _float_t z_t[1] = {bmp_temp};
+       _float_t hx_t[1] = {hx[1]};
+       _float_t H_t[1*OEKF_N] = {0};
+       H_t[0*OEKF_N +14] = 1;  // Temperature correlation x[14]
+      ekf_custom_scalar_update(&oekf, z_t[0], hx_t[0], H_t, R_bmp[3]);  // R_bmp[3] is temperature noise
 
         // Application Constraints
         apply_constraints(&oekf);
