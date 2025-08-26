@@ -18,7 +18,7 @@
 #define _float_t float
 #endif
 
-#define OEKF_N 15  // 8(octonions attitude) + 3(velocity) + 3(position)+ 1(temperature)
+#define OEKF_N 14  // 8(octonions attitude) + 3(velocity) + 3(position)
 #define OEKF_M 6   // Observation dimension
 
 // Linear algebra tool functions
@@ -46,7 +46,6 @@ typedef struct {
     Octonion q;        // Octonions (8-dimensional)
     _float_t v[3];     // Velocity (3D)
     _float_t p[3];     // Position (3D)
-    _float_t temp;     // Temperature（1D）
 } OEKF_State;
 
 // Main structure of OEKF
@@ -71,7 +70,6 @@ static void oekf_initialize(oekf_t *oekf, const _float_t pdiag[OEKF_N]) {
     memcpy(&oekf->x[1], oekf->state.q.i, 7 * sizeof(_float_t));
     memcpy(&oekf->x[8], oekf->state.v, 3 * sizeof(_float_t));
     memcpy(&oekf->x[11], oekf->state.p, 3 * sizeof(_float_t));
-    oekf->x[14] = oekf->state.temp;  // Temperature is mapped to x[14]
     
     // Initialize the covariance matrix (diagonal matrix)
     for (int i = 0; i < OEKF_N; ++i) {
@@ -83,21 +81,38 @@ static void oekf_initialize(oekf_t *oekf, const _float_t pdiag[OEKF_N]) {
 
 // Prediction steps
 static void oekf_predict(oekf_t *ekf, const _float_t fx[OEKF_N], const _float_t F[OEKF_N * OEKF_N], const _float_t Q[OEKF_N * OEKF_N],
-const _float_t dt)  // Add the dt parameter
+const _float_t dt, const _float_t accel_body[3])  // Add the dt parameter,Airframe acceleration parameters (sensor input)
 {
- // Default octonion motion model (when fx or F is NULL)
+
+// Default octonion motion model (when fx or F is NULL)
     _float_t default_fx[OEKF_N];
     _float_t default_F[OEKF_N*OEKF_N] = {0};
     if (fx == NULL || F == NULL) {
-// Extract the angular velocity from the state (assuming x[14-16] is the angular velocity, which needs to be adjusted according to the actual definition)
-        _float_t omega[3] = {ekf->x[14], ekf->x[15], ekf->x[16]};
+
+        // 1. Obtain angular velocity from the sensor (not the state vector, as the state does not contain angular velocity)
+        _float_t omega[3] = {...};   // Passed in from the outside or received through parameters
+
+        // 2. Octonion update (nonlinear attitude modeling based on angular velocity)
         Octonion dq;  // Incremental octonion
-        _float_t theta = sqrt(omega[0]*omega[0] + omega[1]*omega[1] + omega[2]*omega[2]) * dt;
+               _float_t theta = sqrt(omega[0]*omega[0] + omega[1]*omega[1] + omega[2]*omega[2]) * dt;
         dq.r = cos(theta/2);
-        dq.i[0] = omega[0] * sin(theta/2) / theta;  // Simplified version, need to handle theta = 0
-        dq.i[1] = omega[1] * sin(theta/2) / theta;
-        dq.i[2] = omega[2] * sin(theta/2) / theta;
-        memset(&dq.i[3], 0, 4*sizeof(_float_t));  // Assume that the high-dimensional component is 0
+        dq.i[0] = omega[0] * sin(theta/2) / (theta + 1e-8);  // Avoid division by zero
+        dq.i[1] = omega[1] * sin(theta/2) / (theta + 1e-8);
+        dq.i[2] = omega[2] * sin(theta/2) / (theta + 1e-8);
+        memset(&dq.i[3], 0, 4*sizeof(_float_t));  // The imaginary part of high dimensions is not used for the time being.
+        octonion_mult(&ekf->state.q, &dq, &q_new);  // Nonlinear attitude update
+
+        // 3. Velocity update (coupled attitude: conversion of body acceleration to navigation frame)
+        _float_t accel_nav[3];  // Navigation system acceleration
+        octonion_rotate(&ekf->state.q, accel_body, accel_nav);  // Add a new attitude rotation function
+        for (int i=0; i<3; i++) {
+            default_fx[8+i] = ekf->x[8+i] + (accel_nav[i] - 9.81) * dt;  // Subtract gravity
+        }
+        
+        // 4. Position Update (Coupled Velocity)
+        for (int i=0; i<3; i++) {
+            default_fx[11+i] = ekf->x[11+i] + default_fx[8+i] * dt;  // Position = Position + Velocity * dt
+        }
         // Update octonion: q_new = q_old * dq (non-commutative multiplication)
         Octonion q_new;
         octonion_mult(&ekf->state.q, &dq, &q_new);
@@ -124,8 +139,6 @@ const _float_t dt)  // Add the dt parameter
     memcpy(ekf->state.q.i, &ekf->x[1], 7 * sizeof(_float_t));
     memcpy(ekf->state.v, &ekf->x[8], 3 * sizeof(_float_t));
     memcpy(ekf->state.p, &ekf->x[11], 3 * sizeof(_float_t));
-    // Synchronize temperature (x[14] -> state.temp)
-    ekf->state.temp = ekf->x[14];
     
     // Normalize the octonion to ensure the validity of the state
     octonion_normalize(&ekf->state.q);
@@ -216,8 +229,6 @@ static bool oekf_update(oekf_t *ekf, const _float_t z[OEKF_M], const _float_t hx
     memcpy(ekf->state.q.i, &ekf->x[1], 7 * sizeof(_float_t));
     memcpy(ekf->state.v, &ekf->x[8], 3 * sizeof(_float_t));
     memcpy(ekf->state.p, &ekf->x[11], 3 * sizeof(_float_t));
-    // Synchronize temperature (x[14] -> state.temp)
-    ekf->state.temp = ekf->x[14];
     
     // Normalize the octonion to ensure the validity of the state
     octonion_normalize(&ekf->state.q);
@@ -254,15 +265,69 @@ static void _mulmat(
         const int acols, 
         const int bcols)
 {
-    if (arows <= 0 || acols <= 0 || bcols <= 0) return;    // New check
-    for (int i=0; i<arows; ++i) {
-        for (int j=0; j<bcols; ++j) {
-            c[i*bcols+j] = 0;
-            for (int k=0; k<acols; ++k) {
-                c[i*bcols+j] += a[i*acols+k] * b[k*bcols+j];
+    memset(c, 0, arows*bcols*sizeof(_float_t));
+    
+    // Optimization is only performed for the expansion of 14x14 matrices (to adapt to the scenario where OEKF_N=14)
+    if (arows == 14 && acols == 14 && bcols == 14) {
+        // Line 0 expansion：c[0][j] = sum(k=0~13) a[0][k] * b[k][j]
+        for (int j = 0; j < 14; j++) {
+            c[0*14 + j] = 
+                a[0*14 + 0] * b[0*14 + j] +
+                a[0*14 + 1] * b[1*14 + j] +
+                a[0*14 + 2] * b[2*14 + j] +
+                a[0*14 + 3] * b[3*14 + j] +
+                a[0*14 + 4] * b[4*14 + j] +
+                a[0*14 + 5] * b[5*14 + j] +
+                a[0*14 + 6] * b[6*14 + j] +
+                a[0*14 + 7] * b[7*14 + j] +
+                a[0*14 + 8] * b[8*14 + j] +
+                a[0*14 + 9] * b[9*14 + j] +
+                a[0*14 + 10] * b[10*14 + j] +
+                a[0*14 + 11] * b[11*14 + j] +
+                a[0*14 + 12] * b[12*14 + j] +
+                a[0*14 + 13] * b[13*14 + j];
+        }
+
+        // Line 1 expansion:c[1][j] = sum(k=0~13) a[1][k] * b[k][j]
+        for (int j = 0; j < 14; j++) {
+            c[1*14 + j] = 
+                a[1*14 + 0] * b[0*14 + j] +
+                a[1*14 + 1] * b[1*14 + j] +
+                a[1*14 + 2] * b[2*14 + j] +
+                a[1*14 + 3] * b[3*14 + j] +
+                a[1*14 + 4] * b[4*14 + j] +
+                a[1*14 + 5] * b[5*14 + j] +
+                a[1*14 + 6] * b[6*14 + j] +
+                a[1*14 + 7] * b[7*14 + j] +
+                a[1*14 + 8] * b[8*14 + j] +
+                a[1*14 + 9] * b[9*14 + j] +
+                a[1*14 + 10] * b[10*14 + j] +
+                a[1*14 + 11] * b[11*14 + j] +
+                a[1*14 + 12] * b[12*14 + j] +
+                a[1*14 + 13] * b[13*14 + j];
+        }
+
+        // Keep the loop in lines 2 to 13 (to balance code amount and performance)
+        for (int i = 2; i < 14; i++) {
+            for (int j = 0; j < 14; j++) {
+                for (int k = 0; k < 14; k++) {
+                    c[i*14 + j] += a[i*14 + k] * b[k*14 + j];
+                }
             }
         }
     }
+    // Non-14x14 matrices use regular loops (compatible with other dimensions)
+    else {
+        for (int i = 0; i < arows; i++) {
+            for (int j = 0; j < bcols; j++) {
+                for (int k = 0; k < acols; k++) {
+                    c[i*bcols + j] += a[i*acols + k] * b[k*bcols + j];
+                }
+            }
+        }
+    }
+}
+   
 }
 
 /// @private
