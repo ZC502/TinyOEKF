@@ -41,62 +41,47 @@ static inline void octonion_mult(const Octonion *a, const Octonion *b, Octonion 
          - a->i[3]*b->i[3] - a->i[4]*b->i[4] - a->i[5]*b->i[5] 
          - a->i[6]*b->i[6];
 
-   // Imaginary part e0 (i[0]): follows e0 = e1e2 = e3e5 = e4e6 = ... (the non-commutativity is reflected in the sign,
-        That is, e_i e_j = -e_j e_i, where i ≠ j, which is embodied in the form of (a->i[x]*b->i[y] - a->i[y]*b->i[x]))
+   // Imaginary part e0 (i[0]): corresponds to the standard e1, derived from the sign inversion of e2e3, e6e7, and e4e5
     c->i[0] = a->r*b->i[0] + a->i[0]*b->r 
-            + (a->i[1]*b->i[2] - a->i[2]*b->i[1])   // e1e2 = e0, e2e1 = -e0
-            + (a->i[3]*b->i[5] - a->i[5]*b->i[3])   // e3e5 = e0, e5e3 = -e0
-            + (a->i[4]*b->i[6] - a->i[6]*b->i[4])   // e4e6 = e0, e6e4 = -e0
-            + (a->i[2]*b->i[6] - a->i[6]*b->i[2])   // Standard multiplication table entry
-            - (a->i[1]*b->i[5] - a->i[5]*b->i[1]);  
+            + (a->i[1]*b->i[2] - a->i[2]*b->i[1])   // e2e3 - e3e2 = 2e0
+            + (a->i[5]*b->i[6] - a->i[6]*b->i[5])   // e6e7 - e7e6 = 2e0
+            - (a->i[3]*b->i[4] - a->i[4]*b->i[3]);  // e4e5 - e5e4 = -2e0 → Subtraction is equivalent to addition
 
-    // Imaginary part e1 (i[1])：e1=e2e0=e4e3=e5e6=...
+    // Imaginary part e1 (i[1]): corresponds to the standard e2, derived from the sign inversion of e3e1, e4e6, and e5e7
     c->i[1] = a->r*b->i[1] + a->i[1]*b->r 
-            + (a->i[2]*b->i[0] - a->i[0]*b->i[2])   // e2e0 = e1, e0e2 = -e1
-            + (a->i[4]*b->i[3] - a->i[3]*b->i[4])   // e4e3 = e1, e3e4 = -e1
-            + (a->i[5]*b->i[6] - a->i[6]*b->i[5])   // e5e6 = e1, e6e5 = -e1
-            + (a->i[0]*b->i[3] - a->i[3]*b->i[0])   // Standard multiplication table entry
-            - (a->i[2]*b->i[4] - a->i[4]*b->i[2]);  
+            + (a->i[2]*b->i[0] - a->i[0]*b->i[2])   // e3e1 - e1e3 = 2e1
+            + (a->i[3]*b->i[5] - a->i[5]*b->i[3])   // e4e6 - e6e4 = 2e1
+            - (a->i[4]*b->i[6] - a->i[6]*b->i[4]);  // e5e7 - e7e5 = -2e1 → Subtraction is equivalent to addition
 
-    // Imaginary part e2 (i[2])：e2=e0e1=e5e4=e6e3=...
+    // Imaginary part e2 (i[2]): corresponds to the standard e3, derived from the sign inversions of e1e2, e5e6, and e4e7
     c->i[2] = a->r*b->i[2] + a->i[2]*b->r 
-            + (a->i[0]*b->i[1] - a->i[1]*b->i[0])   // e0e1 = e2, e1e0 = -e2
-            + (a->i[5]*b->i[4] - a->i[4]*b->i[5])   // e5e4 = e2, e4e5 = -e2
-            + (a->i[6]*b->i[3] - a->i[3]*b->i[6])   // e6e3 = e2, e3e6 = -e2
-            + (a->i[1]*b->i[4] - a->i[4]*b->i[1])   // Standard multiplication table entry
-            - (a->i[0]*b->i[6] - a->i[6]*b->i[0]);  
+            + (a->i[0]*b->i[1] - a->i[1]*b->i[0])   // e1e2 - e2e1 = 2e2
+            + (a->i[4]*b->i[5] - a->i[5]*b->i[4])   // e5e6 - e6e5 = 2e2
+            - (a->i[3]*b->i[6] - a->i[6]*b->i[3]);  // e4e7 - e7e4 = -2e2 → Subtraction is equivalent to addition
 
-    // Imaginary part e3 (i[3])：e3=e0e5=e1e4=e6e2=...
+    // Imaginary part e3 (i[3]): corresponds to standard e4, derived from e1e5, e2e6, e3e7
     c->i[3] = a->r*b->i[3] + a->i[3]*b->r 
-            + (a->i[0]*b->i[5] - a->i[5]*b->i[0])   // e0e5 = e3, e5e0 = -e3
-            + (a->i[1]*b->i[4] - a->i[4]*b->i[1])   // e1e4 = e3, e4e1 = -e3
-            + (a->i[6]*b->i[2] - a->i[2]*b->i[6])   // e6e2 = e3, e2e6 = -e3
-            + (a->i[3]*b->i[5] - a->i[5]*b->i[3])   // Standard multiplication table entry
-            - (a->i[1]*b->i[0] - a->i[0]*b->i[1]);  
+            + (a->i[0]*b->i[4] - a->i[4]*b->i[0])   // e1e5 - e5e1 = 2e3
+            + (a->i[1]*b->i[5] - a->i[5]*b->i[1])   // e2e6 - e6e2 = 2e3
+            + (a->i[2]*b->i[6] - a->i[6]*b->i[2]);  // e3e7 - e7e3 = 2e3
 
-    // Imaginary part e4 (i[4])：e4=e1e3=e2e6=e5e0=...
+    // Imaginary part e4 (i[4]): corresponds to standard e5, derived from the sign inversion of e4e1, e2e7, e3e6
     c->i[4] = a->r*b->i[4] + a->i[4]*b->r 
-            + (a->i[1]*b->i[3] - a->i[3]*b->i[1])   // e1e3 = e4, e3e1 = -e4
-            + (a->i[2]*b->i[6] - a->i[6]*b->i[2])   // e2e6 = e4, e6e2 = -e4
-            + (a->i[5]*b->i[0] - a->i[0]*b->i[5])   // e5e0 = e4, e0e5 = -e4
-            + (a->i[4]*b->i[5] - a->i[5]*b->i[4])   // Standard multiplication table entry
-            - (a->i[1]*b->i[2] - a->i[2]*b->i[1]);  
+            + (a->i[3]*b->i[0] - a->i[0]*b->i[3])   // e4e1 - e1e4 = 2e4
+            + (a->i[1]*b->i[6] - a->i[6]*b->i[1])   // e2e7 - e7e2 = 2e4
+            - (a->i[2]*b->i[5] - a->i[5]*b->i[2]);  // e3e6 - e6e3 = -2e4 → Subtraction is equivalent to addition
 
-    // Imaginary part e5 (i[5])：e5=e0e3=e2e4=e6e1=...
+    // Imaginary part e5 (i[5]): corresponding to standard e6, sources e7e1, e4e2, e3e5
     c->i[5] = a->r*b->i[5] + a->i[5]*b->r 
-            + (a->i[0]*b->i[3] - a->i[3]*b->i[0])   // e0e3 = e5, e3e0 = -e5
-            + (a->i[2]*b->i[4] - a->i[4]*b->i[2])   // e2e4 = e5, e4e2 = -e5
-            + (a->i[6]*b->i[1] - a->i[1]*b->i[6])   // e6e1 = e5, e1e6 = -e5
-            + (a->i[2]*b->i[3] - a->i[3]*b->i[2])   // Standard multiplication table entry
-            - (a->i[1]*b->i[2] - a->i[2]*b->i[1]);  
+            + (a->i[6]*b->i[0] - a->i[0]*b->i[6])   // e7e1 - e1e7 = 2e5
+            + (a->i[3]*b->i[1] - a->i[1]*b->i[3])   // e4e2 - e2e4 = 2e5
+            + (a->i[2]*b->i[4] - a->i[4]*b->i[2]);  // e3e5 - e5e3 = 2e5
 
-    // Imaginary part e6 (i[6])：e6=e0e4=e1e5=e3e2=...
+    // Imaginary part e6 (i[6]): corresponds to standard e7, sources e1e6, e5e2, e4e3
     c->i[6] = a->r*b->i[6] + a->i[6]*b->r 
-            + (a->i[0]*b->i[4] - a->i[4]*b->i[0])   // e0e4 = e6, e4e0 = -e6
-            + (a->i[1]*b->i[5] - a->i[5]*b->i[1])   // e1e5 = e6, e5e1 = -e6
-            + (a->i[3]*b->i[2] - a->i[2]*b->i[3])   // e3e2 = e6, e2e3 = -e6
-            + (a->i[4]*b->i[6] - a->i[6]*b->i[4])   // Standard multiplication table entry
-            - (a->i[0]*b->i[2] - a->i[2]*b->i[0]);  
+            + (a->i[0]*b->i[5] - a->i[5]*b->i[0])   // e1e6 - e6e1 = 2e6
+            + (a->i[4]*b->i[1] - a->i[1]*b->i[4])   // e5e2 - e2e5 = 2e6
+            + (a->i[3]*b->i[2] - a->i[2]*b->i[3]);  // e4e3 - e3e4 = 2e6
 }
 
 // Octonion normalization function
