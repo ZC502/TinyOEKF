@@ -101,7 +101,6 @@ static void oekf_predict(oekf_t *ekf, const _float_t fx[OEKF_N], const _float_t 
         dq.i[0] = omega[0] * sin(theta/2) / (theta + 1e-8);  // Avoid division by zero
         dq.i[1] = omega[1] * sin(theta/2) / (theta + 1e-8);
         dq.i[2] = omega[2] * sin(theta/2) / (theta + 1e-8);
-        memset(&dq.i[3], 0, 4*sizeof(_float_t));  // The imaginary part of high dimensions is not used for the time being.
         Octonion q_new; // Declare the incremental octonion result variable
         octonion_mult(&ekf->state.q, &dq, &q_new);  // Nonlinear attitude update
 
