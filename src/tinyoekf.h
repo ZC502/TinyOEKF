@@ -106,8 +106,14 @@ const _float_t dt, const _float_t accel_body[3])  // Add the dt parameter,Airfra
         // 3. Velocity update (coupled attitude: conversion of body acceleration to navigation frame)
         _float_t accel_nav[3];  // Navigation system acceleration
         octonion_rotate(&ekf->state.q, accel_body, accel_nav);  // Add a new attitude rotation function
+        // Incorporating coupling correction into velocity update
         for (int i=0; i<3; i++) {
-            default_fx[8+i] = ekf->x[8+i] + (accel_nav[i] - 9.81) * dt;  // Subtract gravity
+        default_fx[8+i] = ekf->x[8+i] + (accel_nav[i] - 9.81 + Coupling correction[i]) * dt;
+           _float_t Coupling correction[3] = {0};
+      // Quantify the order effect using the deviations of i[3] (translation after rotation) and i[4] (rotation after translation)
+     Coupling correction[0] = (ekf->state.q.i[3] - ekf->state.q.i[4]) * accel_body[0];  // X-axis acceleration coupling
+     Coupling correction[1] = (ekf->state.q.i[3] - ekf->state.q.i[4]) * accel_body[1];  // Y-axis acceleration coupling
+     Coupling correction[2] = (ekf->state.q.i[3] - ekf->state.q.i[4]) * accel_body[2];  // Z-axis acceleration coupling
         }
         
         // 4. Position Update (Coupled Velocity)
@@ -166,12 +172,18 @@ static bool oekf_detect_perturbation(const _float_t z[OEKF_M], const _float_t hx
     return res_norm > threshold*threshold;
 }
 
-static void oekf_adapt_Q(_float_t Q[OEKF_N*OEKF_N], const bool is_perturbed, const _float_t scale) {
+static void oekf_adapt_Q(_float_t Q[OEKF_N*OEKF_N], const bool is_perturbed, const _float_t scale, const Octonion *q) {
     if (is_perturbed) {
-        for (int i=0; i<OEKF_N*OEKF_N; i++) Q[i] *= scale;
-    }
+        // Only enhance the noise of the coupling dimension corresponding to i[6] (the index of i[6] in the state vector x is 7)
+        int perturb_dim = 7;  // x[7] corresponds to i[6]
+        Q[perturb_dim * OEKF_N + perturb_dim] *= scale * (1 + fabs(q->i[6]));  // Positively correlated with the amplitude of i[6]
+        // At the same time, enhance the cross-noise between the velocity dimension and i[6] (velocity indices 8-10)
+        for (int v=8; v<=10; v++){ 
+            Q[perturb_dim * OEKF_N + v] *= scale * (1 + fabs(q->i[6]));
+            Q[v * OEKF_N + perturb_dim] *= scale * (1 + fabs(q->i[6]));
 }
-
+}
+}
 // Asynchronous prediction function with timestamp alignment
 static void oekf_predict_async(oekf_t *ekf, const uint64_t current_timestamp, const _float_t Q[OEKF_N*OEKF_N]) {
     if (ekf->last_timestamp == 0) {  // First initialization
