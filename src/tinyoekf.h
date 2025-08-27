@@ -110,12 +110,19 @@ static void oekf_predict(oekf_t *ekf, const _float_t fx[OEKF_N], const _float_t 
         
         // Incorporating coupling correction into velocity update
            _float_t coupling_correction[3] = {0};
-      // Quantify the order effect using the deviations of i[3] (translation after rotation) and i[4] (rotation after translation)
-     Coupling correction[0] = (ekf->state.q.i[3] - ekf->state.q.i[4]) * accel_body[0];  // X-axis acceleration coupling
-     Coupling correction[1] = (ekf->state.q.i[3] - ekf->state.q.i[4]) * accel_body[1];  // Y-axis acceleration coupling
-     Coupling correction[2] = (ekf->state.q.i[3] - ekf->state.q.i[4]) * accel_body[2];  // Z-axis acceleration coupling
+        // Combine the cross term of i[0] (Roll) and i[5] (sequential deviation)
+        coupling_correction[0] = (ekf->state.q.i[3] - ekf->state.q.i[4] 
+             + ekf->state.q.i[0] * ekf->state.q.i[5]) * accel_body[0];
+        coupling_correction[1] = (ekf->state.q.i[3] - ekf->state.q.i[4] 
+            + ekf->state.q.i[1] * ekf->state.q.i[5]) * accel_body[1];
+        coupling_correction[2] = (ekf->state.q.i[3] - ekf->state.q.i[4] 
+            + ekf->state.q.i[2] * ekf->state.q.i[5]) * accel_body[2];
     for (int i=0; i<3; i++) {
-        default_fx[8+i] = ekf->x[8+i] + (accel_nav[i] - 9.81 + Coupling correction[i]) * dt;   
+        // Correction under enhanced perturbation of the cross term between i[6] and i[i] (rotation axis)
+    _float_t perturb_correction = ekf->state.q.i[6] * ekf->state.q.i[i] * 0.1f;  // 0.1 is the coefficient
+    default_fx[8+i] = ekf->x[8+i] + (accel_nav[i] - 9.81 + coupling_correction[i] + perturb_correction) * dt;
+}
+        default_fx[8+i] = ekf->x[8+i] + (accel_nav[i] - 9.81 + coupling_correction[i]) * dt;   
     }
         
         // 4. Position Update (Coupled Velocity)
@@ -123,9 +130,11 @@ static void oekf_predict(oekf_t *ekf, const _float_t fx[OEKF_N], const _float_t 
             default_fx[11+i] = ekf->x[11+i] + default_fx[8+i] * dt;  // Position = Position + Velocity * dt
         }
         // Update octonion: q_new = q_old * dq (non-commutative multiplication)
-        Octonion q_new; // Declare the incremental octonion result variable
         octonion_mult(&ekf->state.q, &dq, &q_new);
         octonion_normalize(&q_new);
+        _float_t omega_norm = sqrt(omega[0]*omega[0] + omega[1]*omega[1] + omega[2]*omega[2]);
+        octonion_update_coupling_strength(&q_new, omega_norm);
+        
         // Mapped to default_fx
         default_fx[0] = q_new.r;
         memcpy(&default_fx[1], q_new.i, 7*sizeof(_float_t));
@@ -186,14 +195,15 @@ static void oekf_adapt_Q(_float_t Q[OEKF_N*OEKF_N], const bool is_perturbed, con
 }
 }
 // Asynchronous prediction function with timestamp alignment
-static void oekf_predict_async(oekf_t *ekf, const uint64_t current_timestamp, const _float_t Q[OEKF_N*OEKF_N]) {
+static void oekf_predict_async(oekf_t *ekf, const uint64_t current_timestamp, const _float_t Q[OEKF_N*OEKF_N],
+        const _float_t accel_body[3], const _float_t omega[3]) {
     if (ekf->last_timestamp == 0) {  // First initialization
         ekf->last_timestamp = current_timestamp;
         return;
     }
     _float_t dt = (current_timestamp - ekf->last_timestamp) / 1e6;  // Convert to seconds
     ekf->last_timestamp = current_timestamp;
-    oekf_predict(ekf, NULL, NULL, Q, dt, NULL,NULL);  // Call the prediction function
+    oekf_predict(ekf, NULL, NULL, Q, dt, accel_body, omega);  // Pass in sensor data
 }
 
 // Update step helper function
@@ -588,16 +598,6 @@ static bool invert(const _float_t * a, _float_t * ainv)
 // Octonion operation function
 Octonion oct_multiply(const Octonion *a, const Octonion *b);
 void oct_normalize(Octonion *q);
-
-// Octonion Kalman filter state structure
-typedef struct {
-    Octonion q;       // Octonion state (rotation + translation)
-    float P[14][14];  // 14-dimensional covariance matrix (8 quaternions + 3 velocities + 3 positions)
-    float Q[14][14];  // Process noise matrix
-    float R[6][6];    // Observation noise matrix (assuming 6-dimensional observation: 3 positions + 3 attitudes)
-    float K[14][6];   // Kalman gain
-    float dt;         // time step
-} TinyOEKF;
 
 /**
  * Initializes the EKF
