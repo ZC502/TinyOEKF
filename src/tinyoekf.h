@@ -53,6 +53,7 @@ typedef struct {
     OEKF_State state;  // State structure (for easy intuitive access)
     _float_t x[OEKF_N]; // State vector (used for EKF matrix operations)
     _float_t P[OEKF_N * OEKF_N]; // covariance matrix
+    uint64_t last_timestamp;  // 上一次更新的时间戳（微秒）
 } oekf_t;
 
 // Initialization function
@@ -90,7 +91,7 @@ const _float_t dt, const _float_t accel_body[3])  // Add the dt parameter,Airfra
     if (fx == NULL || F == NULL) {
 
         // 1. Obtain angular velocity from the sensor (not the state vector, as the state does not contain angular velocity)
-        _float_t omega[3] = {...};   // Passed in from the outside or received through parameters
+        _float_t omega[3] ={...};   // Passed in from the outside or received through parameters
 
         // 2. Octonion update (nonlinear attitude modeling based on angular velocity)
         Octonion dq;  // Incremental octonion
@@ -172,9 +173,14 @@ static void oekf_adapt_Q(_float_t Q[OEKF_N*OEKF_N], const bool is_perturbed, con
 }
 
 // Asynchronous prediction function with timestamp alignment
-static void oekf_predict_async(oekf_t *ekf, const _float_t dt, const _float_t Q[OEKF_N*OEKF_N]) {
-    // Call the predict function with dt, using the default motion model
-    oekf_predict(ekf, NULL, NULL, Q, dt);
+static void oekf_predict_async(oekf_t *ekf, const uint64_t current_timestamp, const _float_t Q[OEKF_N*OEKF_N]) {
+    if (ekf->last_timestamp == 0) {  // First initialization
+        ekf->last_timestamp = current_timestamp;
+        return;
+    }
+    _float_t dt = (current_timestamp - ekf->last_timestamp) / 1e6;  // Convert to seconds
+    ekf->last_timestamp = current_timestamp;
+    oekf_predict(ekf, NULL, NULL, Q, dt, NULL);  // Call the prediction function
 }
 
 // Update step helper function
