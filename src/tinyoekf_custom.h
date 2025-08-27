@@ -110,6 +110,19 @@ static void octonion_normalize(Octonion *q) {
     }
 }
 
+// Octonion rotation vector (body frame -> navigation frame)
+static void octonion_rotate(const Octonion *q, const _float_t vec_body[3], _float_t vec_nav[3]) {
+    // Implementing rotation using octonion multiplication: v_nav = q * v_body * q^{-1} (simplified calculation)
+    Octonion v_body_q = {0};
+    memcpy(v_body_q.i, vec_body, 3*sizeof(_float_t));  // Convert a vector to a pure octonion (with a real part of 0)
+    Octonion q_inv = *q;  // Octonion inverse (the inverse of a unit octonion is equal to its conjugate)
+    for (int i=0; i<7; i++) q_inv.i[i] = -q_inv.i[i];
+    Octonion temp, res;
+    octonion_mult(q, &v_body_q, &temp);
+    octonion_mult(&temp, &q_inv, &res);
+    memcpy(vec_nav, res.i, 3*sizeof(_float_t));  // Take the first 3 dimensions of the imaginary part of the result
+}
+
 /**
   * Runs a custom update on the covariance matrix
   * @param ekf pointer to an oekf_t structure
