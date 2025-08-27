@@ -6,3 +6,9 @@ _float_t R_imu[3*3] = {0.1,0,0, 0,0.1,0, 0,0,0.1};  // 对角噪声矩阵 diagon
 
 // 调用轻量化更新（m=3） Call lightweight update (m=3)
 oekf_update(&ekf, z_imu, hx_imu, H_imu, R_imu, 3);
+
+
+初始化 14 维状态（八元数姿态、速度、位置）。
+处理 IMU（加速度、角速度）、GPS（位置、速度）、气压计（高度）等多模态传感器数据。
+调用 oekf_predict_async 处理时间戳错位（如 IMU 频率 200Hz，GPS 频率 10Hz）。
+针对不同传感器设计观测模型 hx 和雅各比矩阵 H（如 GPS 观测位置时，H 仅在位置维度有非零值）。
