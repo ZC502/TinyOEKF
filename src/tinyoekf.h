@@ -186,41 +186,114 @@ static void oekf_update_step3(oekf_t *ekf, _float_t GH[OEKF_N * OEKF_N]) {
     memcpy(ekf->P, GHP, OEKF_N * OEKF_N * sizeof(_float_t));
 }
 
+/**
+ * Lightweight update for small-dimensional observations (m ≤ 3) to avoid complete matrix inversion
+ * @param Pointer to the ekf oekf_t structure
+ * @param z Observation vector (length m)
+ * @param hx Predicted observed value (length m)
+ * @param H Observation matrix (m x OEKF_N)
+ * @param R Observation noise matrix (m x m, diagonal matrix)
+ * @param m Observation dimension (such as 3D IMU)
+ */
+static bool oekf_update_small(
+        oekf_t *ekf, 
+        const _float_t z[], 
+        const _float_t hx[], 
+        const _float_t H[], 
+        const _float_t R[], 
+        const int m) 
+{
+    // 1. Calculate the residual y = z - hx
+    _float_t y[m];
+    _sub(z, hx, y, m);
+
+    // 2. Calculate P*H^T (OEKF_N × m)
+    _float_t PHt[OEKF_N * m];
+    _mulmat(ekf->P, H, PHt, OEKF_N, OEKF_N, m);  // H is stored column-wise at this point, which is equivalent to H^T
+
+    // 3. Calculate HPH^T + R (m x m, simplified using the properties of diagonal matrices)
+    _float_t S[m * m];
+    memset(S, 0, m*m*sizeof(_float_t));
+    for (int i = 0; i < m; i++) {
+        // Diagonal elements: Dot product of row i of H and column i of PHt + R[i][i]
+        S[i*m + i] = dot(&H[i*OEKF_N], &PHt[i], OEKF_N) + R[i*m + i];
+        // Off-diagonal elements are 0 (assuming R is a diagonal matrix, commonly used for small-dimensional observations)
+    }
+
+    // 4. Calculate the Kalman gain G = P*H^T * S^{-1} (using the diagonal property of S, directly take the reciprocal)
+    _float_t G[OEKF_N * m];
+    for (int i = 0; i < OEKF_N; i++) {
+        for (int j = 0; j < m; j++) {
+            G[i*m + j] = PHt[i*m + j] / S[j*m + j];  // The inverse of S is the reciprocal of the diagonal elements.
+        }
+    }
+
+    // 5. Update state x = x + G*y
+    _float_t Gy[OEKF_N];
+    _mulvec(G, y, Gy, OEKF_N, m);
+    _addvec(ekf->x, Gy, ekf->x, OEKF_N);
+
+    // 6. Synchronize the state to the structure and normalize the quaternion
+    ekf->state.q.r = ekf->x[0];
+    memcpy(ekf->state.q.i, &ekf->x[1], 7*sizeof(_float_t));
+    memcpy(ekf->state.v, &ekf->x[8], 3*sizeof(_float_t));
+    memcpy(ekf->state.p, &ekf->x[11], 3*sizeof(_float_t));
+    octonion_normalize(&ekf->state.q);
+
+    // 7. Update covariance P = (I - G*H) * P (lightweight implementation)
+    _float_t GH[OEKF_N * OEKF_N];
+    _mulmat(G, H, GH, OEKF_N, m, OEKF_N);
+    oekf_update_step3(ekf, GH);  // Reuse the existing covariance update logic
+    return true;
+}
+
 // Update steps
-static bool oekf_update(oekf_t *ekf, const _float_t z[OEKF_M], const _float_t hx[OEKF_M], const _float_t H[OEKF_M * OEKF_N], const _float_t R[OEKF_M * OEKF_M]) {
+// Modify the function parameters, add the observation dimension m, and remove the fixed OEKF_M
+static bool oekf_update(
+        oekf_t *ekf, 
+        const _float_t z[], 
+        const _float_t hx[], 
+        const _float_t H[], 
+        const _float_t R[], 
+        const int m)  // Observation dimension (e.g., 3 for IMU)
+{
+ // 对小维度观测（m <= 3）使用轻量化更新，跳过矩阵求逆
+    if (m > 0 && m <= 3) {
+        return oekf_update_small(ekf, z, hx, H, R, m);
+    }
     // Calculate the gain G = P * H^T * (H * P * H^T + R)^-1
-    _float_t G[OEKF_N * OEKF_M];
-    _float_t Ht[OEKF_N * OEKF_M];
-    _transpose(H, Ht, OEKF_M, OEKF_N);
+    _float_t G[OEKF_N * m];
+    _float_t Ht[OEKF_N * m;
+    _transpose(H, Ht, m, OEKF_N);
     
-    _float_t PHt[OEKF_N * OEKF_M];
+    _float_t PHt[OEKF_N * m];
     _mulmat(ekf->P, Ht, PHt, OEKF_N, OEKF_N, OEKF_M);
     
     _float_t HP[OEKF_M * OEKF_N];
-    _mulmat(H, ekf->P, HP, OEKF_M, OEKF_N, OEKF_N);
+    _mulmat(H, ekf->P, HP, m, OEKF_N, OEKF_N);
     
     _float_t HpHt[OEKF_M * OEKF_M];
-    _mulmat(HP, Ht, HpHt, OEKF_M, OEKF_N, OEKF_M);
+    _mulmat(HP, Ht, HpHt, m, OEKF_N, m);
     
     _float_t HpHtR[OEKF_M * OEKF_M];
-    _addmat(HpHt, R, HpHtR, OEKF_M, OEKF_M);
+    _addmat(HpHt, R, HpHtR, m, m);
     
     _float_t HPHtRinv[OEKF_M * OEKF_M];
     if (!invert(HpHtR, HPHtRinv)) {
         return false;
     }
     
-    _mulmat(PHt, HPHtRinv, G, OEKF_N, OEKF_M, OEKF_M);
+    _mulmat(PHt, HPHtRinv, G, OEKF_N, m, m);
     
     // Update the state vector x = x + G*(z - hx)
-    _float_t z_hx[OEKF_M];
-    _sub(z, hx, z_hx, OEKF_M);
+    _float_t z_hx[m];
+    _sub(z, hx, z_hx, m);
 
     // Added: Detect disturbances and adjust Q (if adjustment is needed before updating)
     _float_t adapted_Q[OEKF_N*OEKF_N];
     
     _float_t Gz_hx[OEKF_N];
-    _mulvec(G, z_hx, Gz_hx, OEKF_N, OEKF_M);
+    _mulvec(G, z_hx, Gz_hx, OEKF_N, m);
     
     _addvec(ekf->x, Gz_hx, ekf->x, OEKF_N);
     
@@ -229,7 +302,6 @@ static bool oekf_update(oekf_t *ekf, const _float_t z[OEKF_M], const _float_t hx
     memcpy(ekf->state.q.i, &ekf->x[1], 7 * sizeof(_float_t));
     memcpy(ekf->state.v, &ekf->x[8], 3 * sizeof(_float_t));
     memcpy(ekf->state.p, &ekf->x[11], 3 * sizeof(_float_t));
-    
     // Normalize the octonion to ensure the validity of the state
     octonion_normalize(&ekf->state.q);
 
@@ -248,7 +320,7 @@ static bool oekf_update(oekf_t *ekf, const _float_t z[OEKF_M], const _float_t hx
     
     // Update the covariance matrix P = (I - G*H) * P
     _float_t GH[OEKF_N * OEKF_N];
-    _mulmat(G, H, GH, OEKF_N, OEKF_M, OEKF_N);
+    _mulmat(G, H, GH, OEKF_N, m, OEKF_N);
     oekf_update_step3(ekf, GH);
     
     return true;
