@@ -34,6 +34,7 @@ static int _cholsl(const _float_t *A, _float_t *a, _float_t *p, const int n);
 static void _addvec(const _float_t *a, const _float_t *b, _float_t *c, const int n);
 static void _sub(const _float_t *a, const _float_t *b, _float_t *c, const int n);
 static bool invert(const _float_t *a, _float_t *ainv);
+static void octonion_rotate(const Octonion *q, const _float_t accel_body[3], _float_t accel_nav[3]);
 
 // Octonion structure
 typedef struct {
@@ -82,7 +83,7 @@ static void oekf_initialize(oekf_t *oekf, const _float_t pdiag[OEKF_N]) {
 
 // Prediction steps
 static void oekf_predict(oekf_t *ekf, const _float_t fx[OEKF_N], const _float_t F[OEKF_N * OEKF_N], const _float_t Q[OEKF_N * OEKF_N],
-const _float_t dt, const _float_t accel_body[3])  // Add the dt parameter,Airframe acceleration parameters (sensor input)
+        const _float_t dt, const _float_t accel_body[3], const _float_t omega[3]) // Add the dt parameter,Airframe acceleration parameters (sensor input)
 {
 
 // Default octonion motion model (when fx or F is NULL)
@@ -91,7 +92,7 @@ const _float_t dt, const _float_t accel_body[3])  // Add the dt parameter,Airfra
     if (fx == NULL || F == NULL) {
 
         // 1. Obtain angular velocity from the sensor (not the state vector, as the state does not contain angular velocity)
-        _float_t omega[3] ={...};   // Passed in from the outside or received through parameters
+        _float_t omega[3] ={0};   //临时初始化，实际应通过参数传入 Passed in from the outside or received through parameters
 
         // 2. Octonion update (nonlinear attitude modeling based on angular velocity)
         Octonion dq;  // Incremental octonion
@@ -101,27 +102,29 @@ const _float_t dt, const _float_t accel_body[3])  // Add the dt parameter,Airfra
         dq.i[1] = omega[1] * sin(theta/2) / (theta + 1e-8);
         dq.i[2] = omega[2] * sin(theta/2) / (theta + 1e-8);
         memset(&dq.i[3], 0, 4*sizeof(_float_t));  // The imaginary part of high dimensions is not used for the time being.
+        Octonion q_new; // Declare the incremental octonion result variable
         octonion_mult(&ekf->state.q, &dq, &q_new);  // Nonlinear attitude update
 
         // 3. Velocity update (coupled attitude: conversion of body acceleration to navigation frame)
         _float_t accel_nav[3];  // Navigation system acceleration
         octonion_rotate(&ekf->state.q, accel_body, accel_nav);  // Add a new attitude rotation function
+        
         // Incorporating coupling correction into velocity update
-        for (int i=0; i<3; i++) {
-        default_fx[8+i] = ekf->x[8+i] + (accel_nav[i] - 9.81 + Coupling correction[i]) * dt;
-           _float_t Coupling correction[3] = {0};
+           _float_t coupling_correction[3] = {0};
       // Quantify the order effect using the deviations of i[3] (translation after rotation) and i[4] (rotation after translation)
      Coupling correction[0] = (ekf->state.q.i[3] - ekf->state.q.i[4]) * accel_body[0];  // X-axis acceleration coupling
      Coupling correction[1] = (ekf->state.q.i[3] - ekf->state.q.i[4]) * accel_body[1];  // Y-axis acceleration coupling
      Coupling correction[2] = (ekf->state.q.i[3] - ekf->state.q.i[4]) * accel_body[2];  // Z-axis acceleration coupling
-        }
+    for (int i=0; i<3; i++) {
+        default_fx[8+i] = ekf->x[8+i] + (accel_nav[i] - 9.81 + Coupling correction[i]) * dt;   
+    }
         
         // 4. Position Update (Coupled Velocity)
         for (int i=0; i<3; i++) {
             default_fx[11+i] = ekf->x[11+i] + default_fx[8+i] * dt;  // Position = Position + Velocity * dt
         }
         // Update octonion: q_new = q_old * dq (non-commutative multiplication)
-        Octonion q_new;
+        Octonion q_new; // Declare the incremental octonion result variable
         octonion_mult(&ekf->state.q, &dq, &q_new);
         octonion_normalize(&q_new);
         // Mapped to default_fx
@@ -129,7 +132,6 @@ const _float_t dt, const _float_t accel_body[3])  // Add the dt parameter,Airfra
         memcpy(&default_fx[1], q_new.i, 7*sizeof(_float_t));
         // Velocity/position update (v = v + adt, p = p + vdt)
         for (int i=0; i<3; i++) {
-            default_fx[8+i] = ekf->x[8+i] + ekf->x[17+i] * dt;  // Assume that x[17-19] is acceleration
             default_fx[11+i] = ekf->x[11+i] + default_fx[8+i] * dt;
         }
         // Generate the default F matrix (simplified version, with only the diagonal elements being 1)
@@ -192,7 +194,7 @@ static void oekf_predict_async(oekf_t *ekf, const uint64_t current_timestamp, co
     }
     _float_t dt = (current_timestamp - ekf->last_timestamp) / 1e6;  // Convert to seconds
     ekf->last_timestamp = current_timestamp;
-    oekf_predict(ekf, NULL, NULL, Q, dt, NULL);  // Call the prediction function
+    oekf_predict(ekf, NULL, NULL, Q, dt, NULL,NULL);  // Call the prediction function
 }
 
 // Update step helper function
@@ -281,7 +283,7 @@ static bool oekf_update(
     }
     // Calculate the gain G = P * H^T * (H * P * H^T + R)^-1
     _float_t G[OEKF_N * m];
-    _float_t Ht[OEKF_N * m;
+    _float_t Ht[OEKF_N * m];
     _transpose(H, Ht, m, OEKF_N);
     
     _float_t PHt[OEKF_N * m];
@@ -306,9 +308,6 @@ static bool oekf_update(
     // Update the state vector x = x + G*(z - hx)
     _float_t z_hx[m];
     _sub(z, hx, z_hx, m);
-
-    // Added: Detect disturbances and adjust Q (if adjustment is needed before updating)
-    _float_t adapted_Q[OEKF_N*OEKF_N];
     
     _float_t Gz_hx[OEKF_N];
     _mulvec(G, z_hx, Gz_hx, OEKF_N, m);
@@ -418,8 +417,6 @@ static void _mulmat(
     }
 }
    
-}
-
 /// @private
 static void _mulvec(
         const _float_t * a, 
@@ -603,41 +600,12 @@ typedef struct {
     float dt;         // time step
 } TinyOEKF;
 
-typedef struct {
-    OEKF_State state;                // Status structure
-    _float_t x[OEKF_N];              // state vector
-    _float_t P[OEKF_N * OEKF_N];     // covariance matrix
-} oekf_t;
-
-// Core function of the filter
-void tinyoekf_init(TinyOEKF *ekf, float dt);
-void tinyoekf_predict(TinyOEKF *ekf, const float *u);
-void tinyoekf_update(TinyOEKF *ekf, const float *z);
-
 /**
  * Initializes the EKF
  * @param ekf pointer to an oekf_t structure
  * @param pdiag a vector of length OEKF_N containing the initial values for the
  * covariance matrix diagonal
  */
-
-// Synchronize state and x during initialization
-static void oekf_initialize(oekf_t * oekf, const _float_t pdiag[OEKF_N]){
-// Initialize the octonion as the identity element
-   oekf->state.q.r = 1.0f;
-    memset(oekf->state.q.i, 0, 7*sizeof(_float_t));
-   // Initialize the velocity and position to 0
-    memset(oekf->state.v, 0, 3*sizeof(_float_t));
-    memset(oekf->state.p, 0, 3*sizeof(_float_t));
- // Initialize the covariance matrix (diagonal matrix)
- for (int i=0; i<OEKF_N; ++i) {
-
-        for (int j=0; j<OEKF_N; ++j) {
-
-            oekf->P[i*OEKF_N+j] = i==j ? pdiag[i] : 0;
-        }
-    }
-}
 
 /**
   * Runs the EKF prediction step
@@ -646,28 +614,6 @@ static void oekf_initialize(oekf_t * oekf, const _float_t pdiag[OEKF_N]){
   * @param F Jacobian of state-transition function
   * @param Q process noise matrix
   * 
-  */static void ekf_predict(
-        oekf_t * ekf, 
-        const _float_t fx[OEKF_N],
-        const _float_t F[OEKF_N*OEKF_N],
-        const _float_t Q[OEKF_N*OEKF_N])
-{        
-    // \hat{x}_k = f(\hat{x}_{k-1}, u_k)
-    memcpy(ekf->x, fx, OEKF_N*sizeof(_float_t));
-
-    // P_k = F_{k-1} P_{k-1} F^T_{k-1} + Q_{k-1}
-
-    _float_t FP[OEKF_N*OEKF_N] = {};
-    _mulmat(F, ekf->P,  FP, OEKF_N, OEKF_N, OEKF_N);
-
-    _float_t Ft[OEKF_N*OEKF_N] = {};
-    _transpose(F, Ft, OEKF_N, OEKF_N);
-
-    _float_t FPFt[OEKF_N*OEKF_N] = {};
-    _mulmat(FP, Ft, FPFt, OEKF_N, OEKF_N, OEKF_N);
-
-    _addmat(FPFt, Q, ekf->P, OEKF_N, OEKF_N);
-}
 
 /// @private
 static void ekf_update_step3(oekf_t * ekf, _float_t GH[OEKF_N*OEKF_N])
@@ -688,43 +634,4 @@ static void ekf_update_step3(oekf_t * ekf, _float_t GH[OEKF_N*OEKF_N])
   * @param R measurement-noise matrix
   * 
   */
-static bool ekf_update(
-        oekf_t * ekf, 
-        const _float_t z[OEKF_M], 
-        const _float_t hx[OEKF_M],
-        const _float_t H[OEKF_M*OEKF_N],
-        const _float_t R[OEKF_M*OEKF_M])
-{        
-    // G_k = P_k H^T_k (H_k P_k H^T_k + R)^{-1}
-    _float_t G[OEKF_N*OEKF_M];
-    _float_t Ht[OEKF_N*OEKF_M];
-    _transpose(H, Ht, OEKF_M, OEKF_N);
-    _float_t PHt[OEKF_N*OEKF_M];
-    _mulmat(ekf->P, Ht, PHt, OEKF_N, OEKF_N, OEKF_M);
-    _float_t HP[OEKF_M*OEKF_N];
-    _mulmat(H, ekf->P, HP, OEKF_M, OEKF_N, OEKF_N);
-    _float_t HpHt[OEKF_M*OEKF_M];
-    _mulmat(HP, Ht, HpHt, OEKF_M, OEKF_N, OEKF_M);
-    _float_t HpHtR[OEKF_M*OEKF_M];
-    _addmat(HpHt, R, HpHtR, OEKF_M,OEKF_M);
-    _float_t HPHtRinv[OEKF_M*OEKF_M];
-    if (!invert(HpHtR, HPHtRinv)) {
-        return false;
-    }
-    _mulmat(PHt, HPHtRinv, G, OEKF_N, OEKF_M, OEKF_M);
 
-    // \hat{x}_k = \hat{x_k} + G_k(z_k - h(\hat{x}_k))
-    _float_t z_hx[OEKF_M];
-    _sub(z, hx, z_hx, OEKF_M);
-    _float_t Gz_hx[OEKF_M*OEKF_N];
-    _mulvec(G, z_hx, Gz_hx, OEKF_N, OEKF_M);
-    _addvec(ekf->x, Gz_hx, ekf->x, OEKF_N);
-
-    // P_k = (I - G_k H_k) P_k
-    _float_t GH[OEKF_N*OEKF_N];
-    _mulmat(G, H, GH, OEKF_N, OEKF_M, OEKF_N);
-    ekf_update_step3(ekf, GH);
-
-    // success
-    return true;
-}
