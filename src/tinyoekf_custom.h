@@ -102,6 +102,14 @@ static void octonion_normalize(Octonion *q) {
     }
 }
 
+// Adjustment of coupling strength
+static void octonion_update_coupling_strength(Octonion *q, _float_t omega_norm) {
+    // The more complex the movement (the larger the omega_norm), the smaller the real part r, and the higher the weight of the coupling term.
+    _float_t scale = 1.0f - exp(-omega_norm * 0.1f);  // Example mapping 示例映射
+    q->r = q->r * (1.0f - scale);  // Weaken the real part and enhance the coupling weight of the imaginary part
+    // Re-normalize to maintain unit norm
+    octonion_normalize(q);
+}
 // Octonion rotation vector (body frame -> navigation frame)
 static void octonion_rotate(const Octonion *q, const _float_t vec_body[3], _float_t vec_nav[3]) {
     // Implementing rotation using octonion multiplication: v_nav = q * v_body * q^{-1} (simplified calculation)
