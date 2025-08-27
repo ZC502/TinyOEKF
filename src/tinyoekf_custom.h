@@ -1,5 +1,6 @@
 /**
  * Custom EKF methods
+ * Add quaternion EKF
  *
  * Copyright (C) 2024 Simon D. Levy
  * Modifications Copyright (C) 2025 ZuoCen Liu
@@ -59,11 +60,14 @@ static inline void octonion_mult(const Octonion *a, const Octonion *b, Octonion 
             + (a->i[4]*b->i[5] - a->i[5]*b->i[4])   // e5e6 - e6e5 = 2e2
             - (a->i[3]*b->i[6] - a->i[6]*b->i[3]);  // e4e7 - e7e4 = -2e2 → Subtraction is equivalent to addition
 
-    // Imaginary part e3 (i[3]): corresponds to standard e4, derived from e1e5, e2e6, e3e7
+    // Imaginary part e3 (i[3]): corresponds to standard e4, derived from e1e5, e2e6, e3e7，
+        Calculation of (rotation-translation sequence coupling term) to enhance the correlation with attitude rotation
     c->i[3] = a->r*b->i[3] + a->i[3]*b->r 
-            + (a->i[0]*b->i[4] - a->i[4]*b->i[0])   // e1e5 - e5e1 = 2e3
-            + (a->i[1]*b->i[5] - a->i[5]*b->i[1])   // e2e6 - e6e2 = 2e3
-            + (a->i[2]*b->i[6] - a->i[6]*b->i[2]);  // e3e7 - e7e3 = 2e3
+        + (a->i[0]*b->i[5] - a->i[5]*b->i[0])   
+        + (a->i[1]*b->i[4] - a->i[4]*b->i[1])   
+        + (a->i[6]*b->i[2] - a->i[2]*b->i[6])   
+        + (a->i[0]*b->i[2] - a->i[2]*b->i[0])   // The influence of Roll axis rotation on translation coupling
+        - (a->i[1]*b->i[0] - a->i[0]*b->i[1]);  // Modulation of coupling by Pitch-Roll sequence deviation
 
     // Imaginary part e4 (i[4]): corresponds to standard e5, derived from the sign inversion of e4e1, e2e7, e3e6
     c->i[4] = a->r*b->i[4] + a->i[4]*b->r 
@@ -77,11 +81,14 @@ static inline void octonion_mult(const Octonion *a, const Octonion *b, Octonion 
             + (a->i[3]*b->i[1] - a->i[1]*b->i[3])   // e4e2 - e2e4 = 2e5
             + (a->i[2]*b->i[4] - a->i[4]*b->i[2]);  // e3e5 - e5e3 = 2e5
 
-    // Imaginary part e6 (i[6]): corresponds to standard e7, sources e1e6, e5e2, e4e3
-    c->i[6] = a->r*b->i[6] + a->i[6]*b->r 
-            + (a->i[0]*b->i[5] - a->i[5]*b->i[0])   // e1e6 - e6e1 = 2e6
-            + (a->i[4]*b->i[1] - a->i[1]*b->i[4])   // e5e2 - e2e5 = 2e6
-            + (a->i[3]*b->i[2] - a->i[2]*b->i[3]);  // e4e3 - e3e4 = 2e6
+    // Imaginary part e6 (i[6]): corresponds to standard e7, sources e1e6, e5e2, e4e3，
+        The calculation of (disturbance coupling term) correlates attitude mutations with velocity deviations.
+   c->i[6] = a->r*b->i[6] + a->i[6]*b->r 
+        + (a->i[0]*b->i[4] - a->i[4]*b->i[0])   
+        + (a->i[1]*b->i[5] - a->i[5]*b->i[1])   
+        + (a->i[3]*b->i[2] - a->i[2]*b->i[3])   
+        + (a->i[0]*b->i[1] - a->i[1]*b->i[0])   // Triggering of disturbances by sudden changes in attitude angles (Roll-Pitch)
+        - (a->i[2]*b->i[3] - a->i[3]*b->i[2]);  // Suppression of disturbances by yaw-translation coupling
 }
 
 // Octonion normalization function
