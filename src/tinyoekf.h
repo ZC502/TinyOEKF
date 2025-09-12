@@ -54,7 +54,8 @@ typedef struct {
     OEKF_State state;  // State structure (for easy intuitive access)
     _float_t x[OEKF_N]; // State vector (used for EKF matrix operations)
     _float_t P[OEKF_N * OEKF_N]; // covariance matrix
-    uint64_t last_timestamp;  // 上一次更新的时间戳（微秒）
+    uint64_t last_timestamp;  // Timestamp of the last update (in microseconds)
+    _float_t time_offset[3]; // Respectively correspond to the time differences (in seconds) between GPS, barometer, other sensors and IMU
 } oekf_t;
 
 // Initialization function
@@ -117,11 +118,15 @@ static void oekf_predict(oekf_t *ekf, const _float_t fx[OEKF_N], const _float_t 
             + ekf->state.q.i[1] * ekf->state.q.i[5]) * accel_body[1];
         coupling_correction[2] = (ekf->state.q.i[3] - ekf->state.q.i[4] 
             + ekf->state.q.i[2] * ekf->state.q.i[5]) * accel_body[2];
-    for (int i=0; i<3; i++) {
+    
+        for (int i=0; i<3; i++) {
         // Correction under enhanced perturbation of the cross term between i[6] and i[i] (rotation axis)
     _float_t perturb_correction = ekf->state.q.i[6] * ekf->state.q.i[i] * 0.1f;  // 0.1 is the coefficient
     default_fx[8+i] = ekf->x[8+i] + (accel_nav[i] - 9.81 + coupling_correction[i] + perturb_correction) * dt;
-}
+       // Supplement time coupling correction
+    _float_t time_coupling = ekf->state.q.r * dt * 0.01; // Real part r associated time delay correction
+    default_fx[8+i] += time_coupling * default_fx[8+i]; //  Speed is affected by time delay
+        }
         default_fx[8+i] = ekf->x[8+i] + (accel_nav[i] - 9.81 + coupling_correction[i]) * dt;   
     }
         
@@ -201,7 +206,7 @@ static void oekf_predict_async(oekf_t *ekf, const uint64_t current_timestamp, co
         ekf->last_timestamp = current_timestamp;
         return;
     }
-    _float_t dt = (current_timestamp - ekf->last_timestamp) / 1e6;  // Convert to seconds
+    _float_t dt = (current_timestamp - ekf->last_timestamp) / 1e6 - ekf->time_offset[sensor_type];  // Convert to seconds
     ekf->last_timestamp = current_timestamp;
     oekf_predict(ekf, NULL, NULL, Q, dt, accel_body, omega);  // Pass in sensor data
 }
