@@ -1,7 +1,7 @@
 /* SensorFusion: Sensor fusion on Arduino using TinyOEKF.  
  *
  * Copyright (C) 2015 Simon D. Levy
- *Modifications Copyright (C) 2025 ZuoCen Liu
+ * Modifications Copyright (C) 2025 ZuoCen Liu
  * MIT License
  */
 
@@ -9,6 +9,17 @@
 #include <tinyoekf.h>
 #include <SFE_BMP180.h>
 #include <Wire.h>
+
+// Pin configuration abstraction (distinguishing different board types)
+#if defined(ARDUINO_TEENSY32)
+    #define IMU_SDA 18
+    #define IMU_SCL 19
+    #define GPS_UART Serial1
+#elif defined(ARDUINO_AVR_UNO)
+    #define IMU_SDA 4
+    #define IMU_SCL 5
+    #define GPS_UART Serial
+#endif
 
 float lm35_temp;  // LM35 temperature sensor reading
 static const uint8_t LM35_PIN = A0;
@@ -88,6 +99,10 @@ static void getBaroReadings(double & T, double & P) {
 
 void setup() 
 {
+    // Initialize the sensor using the defined pins
+    Wire.begin(IMU_SDA, IMU_SCL);  // I2C initialization (depends on IMU_SDA/IMU_SCL)
+    GPS_UART.begin(9600);          // GPS UART initialization (depends on GPS_UART)
+    
     Serial.begin(115200);
      if (!bmp.begin()) {
         Serial.println("Could not find BMP180!");
