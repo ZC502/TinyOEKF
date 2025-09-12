@@ -199,6 +199,13 @@ static void oekf_adapt_Q(_float_t Q[OEKF_N*OEKF_N], const bool is_perturbed, con
 }
 }
 }
+    // oekf_adapt_R function
+static void oekf_adapt_R(_float_t R[], const uint8_t sensor_type, const _float_t quality) {
+    if (sensor_type == GPS && quality < 5) { // Poor GPS signal quality (Level 0-9)
+        for (int i=0; i<6; i++) R[i*6 +i] *= 2.0; // Increase observation noise
+    }
+}
+
 // Asynchronous prediction function with timestamp alignment
 static void oekf_predict_async(oekf_t *ekf, const uint64_t current_timestamp, const _float_t Q[OEKF_N*OEKF_N],
         const _float_t accel_body[3], const _float_t omega[3]) {
