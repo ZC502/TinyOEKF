@@ -53,7 +53,9 @@ typedef struct {
 typedef struct {
     OEKF_State state;  // State structure (for easy intuitive access)
     _float_t x[OEKF_N]; // State vector (used for EKF matrix operations)
-    _float_t P[OEKF_N * OEKF_N]; // covariance matrix
+    // It is recommended to use static allocation to avoid stack overflow (a 14x14 matrix is relatively large, and allocating it on the stack may cause overflow)
+    // Can be defined as a global variable or a static variable: static _float_t P[OEKF_N*OEKF_N] = { ... };
+   _float_t P[OEKF_N * OEKF_N]; // covariance matrix
     uint64_t last_timestamp;  // Timestamp of the last update (in microseconds)
     _float_t time_offset[3]; // Respectively correspond to the time differences (in seconds) between GPS, barometer, other sensors and IMU
 } oekf_t;
