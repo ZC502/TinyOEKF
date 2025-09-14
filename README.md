@@ -40,10 +40,14 @@ TinyOEKF is an enhanced lightweight C/C++ implementation of the Octonion Extende
 
 ### 1.2 Python Prototyping
 For rapid algorithm validation, the Python implementation requires:
+#### Dependencies
+pip install numpy opencv-python 
+##### cd python
+#### Install TinyOEKF Python package
+python setup.py install 
 
-pip install numpy opencv-python  # Dependencies
-cd python
-python setup.py install          # Install TinyOEKF Python package
+
+
 
 
 ## 基础示例  
