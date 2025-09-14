@@ -43,8 +43,6 @@ TinyOEKF is a lightweight, header-only C/C++ implementation of the Extended Kalm
 Located in `examples/SensorFusion`, this example fuses data from a BMP180 barometer and LM35 temperature sensor to estimate altitude.  
 - **Hardware**: Connect BMP180 to I2C (SDA/SCL) and LM35 to analog pin A0.  
 - **Usage**: Upload `SensorFusion.ino` to an Arduino and monitor output via Serial Monitor (115200 baud).  
-
-
 ### 2. Python Prototyping  
 The `python` folder includes:  
 - `altitude_fuser.py`: Fuses barometer and sonar data using a Python EKF prototype (requires OpenCV).  
