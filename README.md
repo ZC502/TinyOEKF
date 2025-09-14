@@ -148,63 +148,24 @@ python python/mousetracker.py  # Requires OpenCV
 
 
 ## 6. API Reference
+### Core Structures
+- oekf_t: Main OEKF structure containing state, covariance matrix, and timestamps
+- Octonion: Octonion structure with real part r and 7 imaginary parts i[0]-i[6]
+- OEKF_State: State wrapper with octonion attitude q, velocity v[3], and position p[3]
+## Key Functions
 
+| Function               | Purpose                                      |
+|------------------------|----------------------------------------------|
+| oekf_initialize()      | Initialize OEKF with initial covariance      |
+| oekf_predict()         | Predict state using motion model              |
+| oekf_update()          | Update state with sensor observations         |
+| octonion_mult()        | Octonion multiplication (non-associative)    |
+| octonion_rotate()      | Rotate vector using octonion attitude        |
 
+## 7. License
+TinyOEKF is released under the MIT License. See LICENSE.md for details.
+Copyright (C) 2024 Simon D. Levy
+Modifications Copyright (C) 2025 ZuoCen Liu
 
-## 基础示例  
-- **examples/SensorFusion**: 包含BMP180气压计与LM35温度传感器的融合示例...  
-- **python文件夹**: 包含OpenCV鼠标跟踪、传感器融合等原型示例...  
-
-## 无人机4维时空导航与多传感器融合  
-TinyOEKF特别适用于无人机高速机动场景，通过八元数的非交换性建模姿态-运动耦合关系，支持3D空间+时间的高精度导航。  
-
-### 核心优势  
-- **轻量化**：纯C实现，无动态内存分配...  
-- **耦合建模**：7个虚部编码旋转-平移顺序...  
-- **多传感器融合**：支持IMU、GPS、气压计等异步传感器...  
-
-<!-- 硬件准备、快速开始等补充内容 -->
-
-## 安装与使用  
-Arduino用户可将TinyOEKF文件夹复制到Arduino libraries目录...  
-```{insert\_element\_0\_}### 1. 补充位置建议  
-推荐将“无人机4维时空导航与多传感器融合”章节添加到原`README.md`中**现有示例介绍之后**，作为独立的核心应用章节。具体位置参考：  
-- 原`README.md`已包含`examples/SensorFusion`和Python示例（鼠标跟踪等）的介绍，补充内容可紧随其后，形成“基础示例→无人机专项应用”的递进结构，既保留原有内容的完整性，又突出TinyOEKF在无人机场景的核心价值。  
-
-
-### 2. 关于“四维时空符合相对论协变性”的说明建议  
-**不建议补充此内容**，原因如下：  
-- 从代码实现来看，“4维时空”实际指“3D空间+时间戳同步”（如`oekf_predict_async`处理传感器异步性），核心是工程上的时空数据对齐，而非严格的相对论协变性（涉及洛伦兹变换、时空弯曲等物理理论）。  
-- 若无明确的理论推导或代码实现支撑（如未在状态方程中引入相对论修正项），添加此描述可能导致误解，建议保持“3D空间+时间同步”的工程化表述，更贴合实际功能。  
-
-
-### 3. 原TinyEKF资料的处理建议  
-**不建议删除，但需调整优先级**：  
-- 原TinyEKF的资料（如Python鼠标跟踪示例）是项目的历史基础和功能补充，保留可体现兼容性和扩展性。  
-- 可通过排版调整突出TinyOEKF的新特性：在介绍示例时，先重点描述`DroneFusion`等无人机相关示例，再简要提及原有`SensorFusion`和Python示例（如“除无人机场景外，项目还包含基础传感器融合、鼠标跟踪等示例，详见对应文件夹”）。  
-
-
-### 调整后的README结构示例（简化）  
-```markdown
-# TinyOEKF: Lightweight C/C++ Extended Kalman Filter with Python for prototyping
-
-<!-- 原有简介、图片等 -->
-
-TinyOEKF is a simple, header-only C/C++ implementation of the Extended Kalman Filter...  
-
-## 基础示例  
-- **examples/SensorFusion**: 包含BMP180气压计与LM35温度传感器的融合示例...  
-- **python文件夹**: 包含OpenCV鼠标跟踪、传感器融合等原型示例...  
-
-## 无人机4维时空导航与多传感器融合  
-TinyOEKF特别适用于无人机高速机动场景，通过八元数的非交换性建模姿态-运动耦合关系，支持3D空间+时间的高精度导航。  
-
-### 核心优势  
-- **轻量化**：纯C实现，无动态内存分配...  
-- **耦合建模**：7个虚部编码旋转-平移顺序...  
-- **多传感器融合**：支持IMU、GPS、气压计等异步传感器...  
-
-<!-- 硬件准备、快速开始等补充内容 -->
-
-## 安装与使用  
-Arduino用户可将TinyOEKF文件夹复制到Arduino libraries目录...  
+## 8. Contributing
+Contributions are welcome! Please submit issues or pull requests to the GitHub repository. For questions, contact maintainer ZuoCen Liu at liouzuocen@qq.com.
