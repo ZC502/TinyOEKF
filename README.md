@@ -1,3 +1,5 @@
+# TinyOEKF: Lightweight Octonion Extended Kalman Filter for UAVs
+
 # TinyEKF: Lightweight C/C++ Extended Kalman Filter with Python for prototyping
 
 <a href="examples/SensorFusion/SensorFusion.ino"><img src="media/barotemp2.jpg" width=750></a>
@@ -27,9 +29,6 @@ So you will have to install OpenCV to run this example. There is also a sensor-f
 
 
 # TinyOEKF: Lightweight Octonion Extended Kalman Filter for UAVs
-
-<a href="examples/SensorFusion/SensorFusion.ino"><img src="media/barotemp2.jpg" width=750></a>
-<a href="python/altitude_fuser.py"><img src="media/altitude.png" width=1000></a>
 
 TinyOEKF is a lightweight, header-only C/C++ implementation of the Extended Kalman Filter (EKF) optimized for high-speed UAV maneuvering. It uses octonions to model attitude-motion coupling and supports asynchronous multi-sensor fusion, making it suitable for microcontrollers like Arduino Uno/Teensy.
 
@@ -77,7 +76,6 @@ TinyOEKF excels in high-speed UAV scenarios, modeling attitude-motion coupling v
 3. Modify pin definitions in `DroneFusion.ino` according to your hardware (see code comments).  
 4. Upload to your flight controller and check output via Serial Monitor (115200 baud).  
 
-
 ### Validation Guide  
 1. **Static Test**: When the drone is stationary, position `p[0]-p[2]` should be stable (fluctuation < 0.1m), and `i[5]-i[6]` (coupling terms) should be near 0.  
 2. **Dynamic Test**:  
@@ -85,21 +83,17 @@ TinyOEKF excels in high-speed UAV scenarios, modeling attitude-motion coupling v
    - Translation: `i[3]-i[4]` (rotation-translation coupling) should change significantly during rapid movement.  
 3. **Spatiotemporal Consistency**: Fusion trajectory should deviate from GPS trajectory by <1m at high speeds.  
 
-
 ### Parameter Tuning  
 - If trajectory diverges: Increase noise in attitude dimensions of `Q` (allows larger corrections).  
 - If sensitive to disturbances: Reduce `i[6]` coupling coefficient (e.g., 0.05 → 0.03 in examples).  
 - If GPS jumps: Increase position noise in `R_gps` (e.g., 1e1 → 5e1).  
 
-
 ## Installation  
 - **Arduino**: Copy the `TinyOEKF` folder to `Documents/Arduino/libraries`.  
 - **C/C++**: Include `tinyoekf.h` and `tinyoekf_custom.h` in your project.  
 
-
 ## License  
 MIT License (see `LICENSE.md` for details).  
-
 
 ## Acknowledgments  
 Based on TinyEKF by Simon D. Levy, modified for octonion-based UAV navigation by ZuoCen Liu.
