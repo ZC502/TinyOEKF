@@ -30,7 +30,13 @@ So you will have to install OpenCV to run this example. There is also a sensor-f
 
 # TinyOEKF: Lightweight Octonion Extended Kalman Filter for UAVs
 
-TinyOEKF is a simple, header-only C/C++ implementation of the Extended Kalman Filter...  
+TinyOEKF is an enhanced lightweight C/C++ implementation of the Octonion Extended Kalman Filter, evolved from TinyEKF. It is specifically optimized for high-speed UAV maneuvering scenarios, supporting non-commutative attitude modeling, coupled motion prediction, and asynchronous multi-sensor fusion. Designed for embedded systems like Arduino and STM32, it uses static memory allocation (no dynamic allocation) to ensure stability on resource-constrained devices.
+
+## 1. Installation
+### 1.1 Arduino/Embedded Platforms
+- Download or clone the repository
+- Drag the entire TinyOEKF folder into your Arduino libraries directory (typically Documents/Arduino/libraries/)
+- Verify installation by opening File > Examples > TinyOEKF > SensorFusion in the Arduino IDE
 
 ## 基础示例  
 - **examples/SensorFusion**: 包含BMP180气压计与LM35温度传感器的融合示例...  
