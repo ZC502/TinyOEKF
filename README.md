@@ -38,6 +38,12 @@ TinyOEKF is an enhanced lightweight C/C++ implementation of the Octonion Extende
 - Drag the entire TinyOEKF folder into your Arduino libraries directory (typically Documents/Arduino/libraries/)
 - Verify installation by opening File > Examples > TinyOEKF > SensorFusion in the Arduino IDE
 
+### 1.2 Python Prototyping
+For rapid algorithm validation, the Python implementation requires:
+pip install numpy opencv-python  # Dependencies
+cd python
+python setup.py install          # Install TinyOEKF Python package
+
 ## 基础示例  
 - **examples/SensorFusion**: 包含BMP180气压计与LM35温度传感器的融合示例...  
 - **python文件夹**: 包含OpenCV鼠标跟踪、传感器融合等原型示例...  
