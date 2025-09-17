@@ -87,7 +87,7 @@ Together, they form an algebraic mapping of "non-commutatable spatiotemporal ord
 
 
 ### 2. Physical Principles of 4D Spacetime (Alignment with Document Content)  
-Existing documents (Sections 3.3 and 3.4) have explained the core principles through the mapping relationship between the 8-dimensional structure of octonions and 4D spacetime:
+Existing documents (Readme.md sections 3.3 and 3.4) have explained the core principles through the mapping relationship between the 8-dimensional structure of octonions and 4D spacetime:
 
 - **Real part**: Linked to the time scale (e.g., `r≈1` reflects uniform temporal flow when stationary; a decrease in `r` enhances spacetime coupling during motion).  
 - **Imaginary parts**:  
